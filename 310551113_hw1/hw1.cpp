@@ -78,11 +78,12 @@ bool isNumber(string s) {
 void iterateProcess(string procPath, Process &proc) {
     filesystem::path path{procPath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
-        // if (entry.is_directory()) {
-
-        // } else if (entry.is_regular_file()) {
-        // }
-        cout << filesystem::absolute(entry.path()).string() << '\n';
+        cout << filesystem::absolute(entry.path()).string() << ": ";
+        if (entry.is_directory()) {
+            cout << "directory\n";
+        } else if (entry.is_regular_file()) {
+            cout << "regular\n";
+        }
     }
     cout << '\n';
 }
