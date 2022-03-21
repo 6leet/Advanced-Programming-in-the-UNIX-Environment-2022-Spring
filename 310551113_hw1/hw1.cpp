@@ -78,11 +78,11 @@ bool isNumber(string s) {
 void iterateProcess(string procPath, Process &proc) {
     filesystem::path path{procPath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
-        cout << filesystem::absolute(entry.path()).string() << ": ";
-        if (entry.is_directory()) {
-            cout << "directory\n";
-        } else if (entry.is_symlink()) {
-            cout << "symlink\n";
+        cout << filesystem::absolute(entry.path()).string() << "-> ";
+        if (entry.is_symlink()) {
+            cout << filesystem::read_symlink(entry.path()).string() << '\n';
+        } else {
+            cout << '\n';
         }
     }
     cout << '\n';
