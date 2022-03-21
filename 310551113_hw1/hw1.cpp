@@ -91,7 +91,7 @@ void iterateProcess(string procPath, Process &proc) {
     cout << '\n';
 }
 
-void iterateBase(string basePath, vector<Process> processes) {
+void iterateBase(string basePath, vector<Process> &processes) {
     filesystem::path path{basePath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
         if (entry.is_directory()) {
