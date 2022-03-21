@@ -78,9 +78,9 @@ bool isNumber(string s) {
 void iterateProcess(string procPath, Process &proc) {
     filesystem::path path{procPath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
-        cout << filesystem::absolute(entry.path()).string() << "-> ";
+        cout << filesystem::absolute(entry.path()).filename() << "-> ";
         if (entry.is_symlink()) {
-            cout << filesystem::read_symlink(entry.path()).filename() << '\n';
+            proc.command = filesystem::read_symlink(entry.path()).filename();
         } else {
             cout << '\n';
         }
