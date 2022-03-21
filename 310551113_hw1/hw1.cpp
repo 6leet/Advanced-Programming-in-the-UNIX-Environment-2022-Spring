@@ -81,8 +81,6 @@ void iterateProcess(string procPath, Process &proc) {
         cout << filesystem::absolute(entry.path()).string() << ": ";
         if (entry.is_directory()) {
             cout << "directory\n";
-        } else if (entry.is_regular_file()) {
-            cout << "regular\n";
         } else if (entry.is_symlink()) {
             cout << "symlink\n";
         }
