@@ -37,7 +37,7 @@ void iterate() {
     filesystem::path path{"/proc"};
     for (auto const& entry : filesystem::directory_iterator{path}) {
         if (entry.is_directory()) {
-            cout << filesystem::absolute(entry.path()).string() << '\n';
+            cout << filesystem::relative(entry.path(), path).string() << '\n';
         }
     }
 }
