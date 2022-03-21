@@ -19,6 +19,7 @@ int main(int argc, char *argv[]) {
     filter f;
     for (int i = 0; i < argc; i++) {
         if (string(argv[i]) == "-c") {
+            
         } else if (string(argv[i]) == "-t") {
             // f.filenameRegex = argv[i++];
         } else if (string(argv[i]) == "-f") {
