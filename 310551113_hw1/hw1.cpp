@@ -100,6 +100,7 @@ void iterateBase(string basePath, vector<Process> processes) {
             if (isNumber(procPathR)) {
                 Process proc(stoi(procPathR));
                 iterateProcess(procPathA, proc);
+                processes.push_back(proc);
             }
         }
     }
