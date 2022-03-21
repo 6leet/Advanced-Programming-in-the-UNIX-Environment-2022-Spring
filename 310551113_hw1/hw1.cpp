@@ -80,7 +80,7 @@ void iterateProcess(string procPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{path}) {
         cout << filesystem::absolute(entry.path()).string() << "-> ";
         if (entry.is_symlink()) {
-            cout << filesystem::read_symlink(entry.path()).string() << '\n';
+            cout << filesystem::read_symlink(entry.path()).filename() << '\n';
         } else {
             cout << '\n';
         }
