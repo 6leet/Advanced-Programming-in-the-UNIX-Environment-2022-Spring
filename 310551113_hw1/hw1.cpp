@@ -83,6 +83,8 @@ void iterateProcess(string procPath, Process &proc) {
             cout << "directory\n";
         } else if (entry.is_regular_file()) {
             cout << "regular\n";
+        } else if (entry.is_symlink()) {
+            cout << "symlink\n";
         }
     }
     cout << '\n';
