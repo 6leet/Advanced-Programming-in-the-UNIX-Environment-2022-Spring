@@ -36,6 +36,9 @@ struct Process {
         user = "";
         files.clear();
     }
+    void show() {
+        cout << command << '\t' << pid << '\t' << user << '\n';
+    }
 };
 
 struct Filter {
@@ -78,8 +81,8 @@ bool isNumber(string s) {
 void iterateProcess(string procPath, Process &proc) {
     filesystem::path path{procPath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
-        cout << filesystem::absolute(entry.path()).filename() << "-> ";
-        if (entry.is_symlink()) {
+        string procEntry = filesystem::absolute(entry.path()).filename();
+        if (procEntry == "exe") { // COMMAND
             proc.command = filesystem::read_symlink(entry.path()).filename();
         } else {
             cout << '\n';
@@ -88,8 +91,7 @@ void iterateProcess(string procPath, Process &proc) {
     cout << '\n';
 }
 
-void iterateBase(string basePath) {
-    vector<Process> processes;
+void iterateBase(string basePath, vector<Process> processes) {
     filesystem::path path{basePath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
         if (entry.is_directory()) {
@@ -105,5 +107,10 @@ void iterateBase(string basePath) {
 
 int main(int argc, char *argv[]) {
     setFilter(argc, argv);
-    iterateBase("/proc");
+    vector<Process> processes;
+    iterateBase("/proc", processes);
+
+    for (int i = 0; i < processes.size(); i++) {
+        processes[i].show();
+    }
 }
