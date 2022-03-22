@@ -129,7 +129,7 @@ bool isNumber(string s) {
     return true;
 }
 
-string getCommand(string procEntryA) {
+string getCommand(string procEntryA) { // "proc/[pid]/cmdline" & split by '\0'
     ifstream file(procEntryA);
     string line;
     getline(file, line);
@@ -166,9 +166,18 @@ string getProcUser(string procEntryA) {
     return pwd->pw_name;
 }
 
-void iterateProcess(string procPath, Process &proc) {
-    filesystem::path path{procPath};
-    for (auto const& entry : filesystem::directory_iterator{path}) {
+void safeReadSymlink(filesystem::path filePath, string type, File &file) {
+    try {
+        file.type = type;
+        file.name = filesystem::read_symlink(filePath).string();
+    } catch (exception &e) {
+        file.type = "unknown";
+        file.name = filesystem::absolute(filePath).string() + " (Permission denied)";
+    }
+}
+
+void iterateProcess(filesystem::path procPath, Process &proc) {
+    for (auto const& entry : filesystem::directory_iterator{procPath}) {
         string procEntryA = filesystem::absolute(entry.path()).string();
         string procEntryF = filesystem::absolute(entry.path()).filename();
         if (procEntryF == "cmdline") {
@@ -179,8 +188,7 @@ void iterateProcess(string procPath, Process &proc) {
             // FD: txt
             File file;
             file.fd = "txt";
-            file.type = "REG";
-            file.name = filesystem::read_symlink(entry.path()).string();
+            safeReadSymlink(entry.path(), "REG", file);
             proc.files.push_back(file);
         } else if (procEntryF == "status") { 
             // USER
@@ -190,22 +198,21 @@ void iterateProcess(string procPath, Process &proc) {
             // FD: current working directory
             File file;
             file.fd = "cwd";
-            file.type = "DIR";
-            file.name = filesystem::read_symlink(entry.path()).string();
+            safeReadSymlink(entry.path(), "DIR", file);
             proc.files.push_back(file);
         }
     }
 }
 
-void iterateBase(string basePath, vector<Process> &processes) {
-    filesystem::path path{basePath};
-    for (auto const& entry : filesystem::directory_iterator{path}) {
+void iterateBase(string path, vector<Process> &processes) {
+    filesystem::path basePath{path};
+    for (auto const& entry : filesystem::directory_iterator{basePath}) {
         if (entry.is_directory()) {
-            string procPathR = filesystem::relative(entry.path(), path).string();
+            string procPathR = filesystem::relative(entry.path(), basePath).string();
             string procPathA = filesystem::absolute(entry.path()).string();
             if (isNumber(procPathR)) {
                 Process proc(stoi(procPathR));
-                iterateProcess(procPathA, proc);
+                iterateProcess(entry.path(), proc);
                 updateMax(proc);
                 processes.push_back(proc);
             }
