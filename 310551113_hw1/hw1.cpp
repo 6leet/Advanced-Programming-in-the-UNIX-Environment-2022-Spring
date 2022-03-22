@@ -1,3 +1,6 @@
+//  todo: 
+//      1. how to get COMMAND if permission is denied? (not by read_symlink, not by reading `cmdline` file)
+//      2. 
 #include <iostream>
 #include <string>
 #include <regex>
@@ -126,6 +129,18 @@ bool isNumber(string s) {
     return true;
 }
 
+string getCommand(string procEntryA) {
+    ifstream file(procEntryA);
+    string line;
+    getline(file, line);
+    stringstream ss(line);
+    string command;
+    while (getline(ss, command, '\0')) {
+        break;
+    }
+    return command;
+}
+
 uid_t getProcUid(string procEntryA) { // "proc/[pid]/status"
     ifstream file(procEntryA);
     string line;
@@ -156,21 +171,23 @@ void iterateProcess(string procPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{path}) {
         string procEntryA = filesystem::absolute(entry.path()).string();
         string procEntryF = filesystem::absolute(entry.path()).filename();
-        if (procEntryF == "exe") { 
+        if (procEntryF == "cmdline") {
             // COMMAND
-            proc.command = filesystem::read_symlink(entry.path()).filename();
-            
-
+            proc.command = getCommand(procEntryA);
+        }
+        if (procEntryF == "exe") {             
             // FD: txt
             File file;
             file.fd = "txt";
             file.type = "REG";
             file.name = filesystem::read_symlink(entry.path()).string();
             proc.files.push_back(file);
-        } else if (procEntryF == "status") { // USER
+        } else if (procEntryF == "status") { 
+            // USER
             proc.user = getProcUser(procEntryA);
             
-        } else if (procEntryF == "cwd") { // FD: current working directory
+        } else if (procEntryF == "cwd") { 
+            // FD: current working directory
             File file;
             file.fd = "cwd";
             file.type = "DIR";
