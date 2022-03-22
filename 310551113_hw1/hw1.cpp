@@ -5,17 +5,20 @@
 //      4. duplicate process (the first one and the last one)
 //      5. [0-9]+[rwu] & NOFD
 //      6. symbolic link to pipe / socket (sample?)
+//      7. filter (regular expression)
 #include <iostream>
 #include <string>
 #include <regex>
 #include <filesystem>
 #include <vector>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <pwd.h>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <set>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -171,10 +174,25 @@ string getProcUser(string procEntryA) {
     return pwd->pw_name;
 }
 
+int getInode(string filename) {
+    int fd = open(filename.c_str(), O_RDONLY);
+    if (fd < 0) {
+        cerr << "open\n";
+        return -1;
+    }
+    struct stat buf;
+    if (fstat(fd, &buf) < 0) {
+        cerr << "fstat\n";
+        return -1;
+    }
+    return buf.st_ino;
+}
+
 void safeReadSymlink(filesystem::path filePath, string type, File &file) {
     try {
         file.type = type;
         file.name = filesystem::read_symlink(filePath).string();
+        file.node = to_string(getInode(file.name));
     } catch (exception &e) {
         file.type = "unknown";
         file.name = filesystem::absolute(filePath).string() + " (Permission denied)";
