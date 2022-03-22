@@ -3,6 +3,10 @@
 #include <regex>
 #include <filesystem>
 #include <vector>
+#include <sys/types.h>
+#include <pwd.h>
+#include <fstream>
+#include <sstream>
 
 using namespace std;
 
@@ -78,17 +82,42 @@ bool isNumber(string s) {
     return true;
 }
 
+uid_t getProcUid(string procEntryA) { // "proc/[pid]/status"
+    ifstream file(procEntryA);
+    string line;
+    while (getline(file, line)) {
+        if (line.substr(0, 3) == "Uid") {
+            stringstream ss(line);
+            string buf;
+            while (ss >> buf) {
+                if (isNumber(buf)) {
+                    return stoi(buf);
+                }
+            }
+            break;
+        }
+    }
+    return -1;
+}
+
+string getProcUser(string procEntryA) {
+    uid_t uid = getProcUid(procEntryA);
+    struct passwd *pwd;
+    pwd = getpwuid(uid);
+    return pwd->pw_name;
+}
+
 void iterateProcess(string procPath, Process &proc) {
     filesystem::path path{procPath};
     for (auto const& entry : filesystem::directory_iterator{path}) {
-        string procEntry = filesystem::absolute(entry.path()).filename();
-        if (procEntry == "exe") { // COMMAND
+        string procEntryA = filesystem::absolute(entry.path()).string();
+        string procEntryF = filesystem::absolute(entry.path()).filename();
+        if (procEntryF == "exe") { // COMMAND
             proc.command = filesystem::read_symlink(entry.path()).filename();
-        } else {
-            cout << '\n';
+        } else if (procEntryF == "status") {
+            proc.user = getProcUser(procEntryA);
         }
     }
-    cout << '\n';
 }
 
 void iterateBase(string basePath, vector<Process> &processes) {
@@ -110,6 +139,7 @@ int main(int argc, char *argv[]) {
     setFilter(argc, argv);
     vector<Process> processes;
     iterateBase("/proc", processes);
+
 
     for (int i = 0; i < processes.size(); i++) {
         processes[i].show();
