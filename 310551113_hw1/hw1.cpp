@@ -1,6 +1,10 @@
 //  todo: 
-//      1. how to get COMMAND if permission is denied? (not by read_symlink, not by reading `cmdline` file)
-//      2. 
+//      1. COMMAND should be a filename or an absolute path?
+//      2. inode
+//      3. how to correctly get file type? (currently fill in the field by myself)
+//      4. duplicate process (the first one and the last one)
+//      5. [0-9]+[rwu] & NOFD
+//      6. symbolic link to pipe / socket (sample?)
 #include <iostream>
 #include <string>
 #include <regex>
@@ -11,6 +15,7 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <set>
 
 using namespace std;
 
@@ -67,13 +72,13 @@ struct Process {
     }
     void show() {
         for (int i = 0; i < files.size(); i++) {
-            cout << setw(maxlen.command + 4) << left << command 
-                << setw(maxlen.pid + 4) << left << pid 
-                << setw(maxlen.user + 4) << left << user 
-                << setw(maxlen.fd + 4) << left << files[i].fd
-                << setw(maxlen.type) << left << files[i].type
-                << setw(maxlen.node) << left << files[i].node
-                << setw(maxlen.name) << left << files[i].name
+            cout << setw(maxlen.command + 2) << left << command 
+                << setw(maxlen.pid + 2) << left << pid 
+                << setw(maxlen.user + 2) << left << user 
+                << setw(maxlen.fd + 2) << left << files[i].fd
+                << setw(maxlen.type + 2) << left << files[i].type
+                << setw(maxlen.node + 2) << left << files[i].node
+                << setw(maxlen.name + 2) << left << files[i].name
                 << '\n';
         }
     }
@@ -176,6 +181,40 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
     }
 }
 
+void getMappedFiles(string procEntryA, Process &proc) {
+    ifstream file(procEntryA);
+    string line;
+    set<string> inodePool;
+    while (getline(file, line)) {
+        File file;
+        file.fd = "mem";
+        file.type = "REG";
+        stringstream ss(line);
+        string buf;
+        int i = 0;
+        while (ss >> buf) {
+            if (i % 7 == 4) { // inode
+                if (inodePool.find(buf) != inodePool.end() || buf == "0") {
+                    break;
+                } else {
+                    inodePool.insert(buf);
+                    file.node = buf;
+                }
+            } else if (i % 7 == 5) { // filename
+                file.name = buf;
+            } else if (i % 7 == 6) { // deleted or not
+                if (buf.find("deleted") != -1) {
+                    file.fd = "DEL";
+                }
+            }
+            i++;
+        }
+        if (file.node != "") {
+            proc.files.push_back(file);
+        }
+    }
+}
+
 void iterateProcess(filesystem::path procPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{procPath}) {
         string procEntryA = filesystem::absolute(entry.path()).string();
@@ -183,13 +222,6 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
         if (procEntryF == "cmdline") {
             // COMMAND
             proc.command = getCommand(procEntryA);
-        }
-        if (procEntryF == "exe") {             
-            // FD: txt
-            File file;
-            file.fd = "txt";
-            safeReadSymlink(entry.path(), "REG", file);
-            proc.files.push_back(file);
         } else if (procEntryF == "status") { 
             // USER
             proc.user = getProcUser(procEntryA);
@@ -200,6 +232,21 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
             file.fd = "cwd";
             safeReadSymlink(entry.path(), "DIR", file);
             proc.files.push_back(file);
+        } else if (procEntryF == "exe") {             
+            // FD: txt
+            File file;
+            file.fd = "txt";
+            safeReadSymlink(entry.path(), "REG", file);
+            proc.files.push_back(file);
+        } else if (procEntryF == "root") {
+            // FD: rtd
+            File file;
+            file.fd = "rtd";
+            safeReadSymlink(entry.path(), "DIR", file);
+            proc.files.push_back(file);
+        } else if (procEntryF == "maps") {
+            // FD: mem
+            getMappedFiles(procEntryA, proc);
         }
     }
 }
@@ -221,13 +268,13 @@ void iterateBase(string path, vector<Process> &processes) {
 }
 
 void output(vector<Process> processes) {
-    cout << setw(maxlen.command + 4) << left << "COMMAND" 
-        << setw(maxlen.pid + 4) << left << "PID" 
-        << setw(maxlen.user + 4) << left << "USER" 
-        << setw(maxlen.fd + 4) << left << "FD"
-        << setw(maxlen.type) << left << "TYPE"
-        << setw(maxlen.node) << left << "NODE"
-        << setw(maxlen.name) << left << "NAME"
+    cout << setw(maxlen.command + 2) << left << "COMMAND" 
+        << setw(maxlen.pid + 2) << left << "PID" 
+        << setw(maxlen.user + 2) << left << "USER" 
+        << setw(maxlen.fd + 2) << left << "FD"
+        << setw(maxlen.type + 2) << left << "TYPE"
+        << setw(maxlen.node + 2) << left << "NODE"
+        << setw(maxlen.name + 2) << left << "NAME"
         << '\n';
     for (int i = 0; i < processes.size(); i++) {
         processes[i].show();
