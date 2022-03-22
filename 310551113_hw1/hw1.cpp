@@ -233,6 +233,23 @@ void getMappedFiles(string procEntryA, Process &proc) {
     }
 }
 
+void iterateFd(filesystem::path fdPath, Process &proc) {
+    for (auto const& entry : filesystem::directory_iterator{fdPath}) {
+        cout << filesystem::read_symlink(entry.path()).string() << ": ";
+        if (entry.is_character_file()) {
+            cout << "character file\n";
+        } else if (entry.is_fifo()) {
+            cout << "fifo\n";
+        } else if (entry.is_socket()) {
+            cout << "socket\n";
+        } else if (entry.is_other()) {
+            cout << "other\n";
+        } else {
+            cout << '\n';
+        }
+    }
+}
+
 void iterateProcess(filesystem::path procPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{procPath}) {
         string procEntryA = filesystem::absolute(entry.path()).string();
@@ -265,6 +282,16 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
         } else if (procEntryF == "maps") {
             // FD: mem
             getMappedFiles(procEntryA, proc);
+        } else if (procEntryF == "fd") {
+            // Fd: [0-9][rwu]
+            try {
+                iterateFd(entry.path(), proc);
+            } catch (exception &e) {
+                File file;
+                file.fd = "NOFD";
+                file.name = filesystem::absolute(entry.path()).string() + " (permission denied)";
+                proc.files.push_back(file);
+            }
         }
     }
 }
