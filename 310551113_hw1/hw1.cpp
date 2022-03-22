@@ -7,8 +7,30 @@
 #include <pwd.h>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 
 using namespace std;
+
+struct MaxLength {
+    int command;
+    int pid;
+    int user;
+    int fd;
+    int type;
+    int node;
+    int name;
+    MaxLength() {
+        command = 7;
+        pid = 3;
+        user = 4;
+        fd = 2;
+        type = 4;
+        node = 4;
+        name = 4;
+    }
+};
+
+MaxLength maxlen;
 
 struct File {
     string fd;
@@ -41,7 +63,10 @@ struct Process {
         files.clear();
     }
     void show() {
-        cout << command << '\t' << pid << '\t' << user << '\n';
+        cout << setw(maxlen.command + 4) << left << command 
+            << setw(maxlen.pid + 4) << left << pid 
+            << setw(maxlen.user + 4) << left << user 
+            << '\n';
     }
 };
 
@@ -114,8 +139,10 @@ void iterateProcess(string procPath, Process &proc) {
         string procEntryF = filesystem::absolute(entry.path()).filename();
         if (procEntryF == "exe") { // COMMAND
             proc.command = filesystem::read_symlink(entry.path()).filename();
+            maxlen.command = max(maxlen.command, int(proc.command.size()));
         } else if (procEntryF == "status") {
             proc.user = getProcUser(procEntryA);
+            maxlen.user = max(maxlen.user, int(proc.user.size()));
         }
     }
 }
@@ -128,6 +155,7 @@ void iterateBase(string basePath, vector<Process> &processes) {
             string procPathA = filesystem::absolute(entry.path()).string();
             if (isNumber(procPathR)) {
                 Process proc(stoi(procPathR));
+                maxlen.pid = max(maxlen.pid, int(to_string(proc.pid).size()));
                 iterateProcess(procPathA, proc);
                 processes.push_back(proc);
             }
@@ -135,13 +163,19 @@ void iterateBase(string basePath, vector<Process> &processes) {
     }
 }
 
+void output(vector<Process> processes) {
+    cout << setw(maxlen.command + 4) << left << "COMMAND" 
+        << setw(maxlen.pid + 4) << left << "PID" 
+        << setw(maxlen.user + 4) << left << "USER" 
+        << '\n';
+    for (int i = 0; i < processes.size(); i++) {
+        processes[i].show();
+    } 
+}
+
 int main(int argc, char *argv[]) {
     setFilter(argc, argv);
     vector<Process> processes;
     iterateBase("/proc", processes);
-
-
-    for (int i = 0; i < processes.size(); i++) {
-        processes[i].show();
-    }
+    output(processes);
 }
