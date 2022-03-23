@@ -33,7 +33,7 @@ struct Filter {
         return regex_search(_command, command);
     }
     bool file(string _filename, string _type) {
-        regex_search(_filename, filename) && regex_match(_type, type);
+        return regex_search(_filename, filename) && regex_match(_type, type);
     }
 };
 
