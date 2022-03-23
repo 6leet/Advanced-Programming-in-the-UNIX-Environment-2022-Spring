@@ -190,11 +190,20 @@ int getInode(string filename) {
     return buf.st_ino;
 }
 
+string extractInode(string filename) {
+    int s = filename.find('['), t = filename.find(']');
+    return filename.substr(s, t - s + 1);
+}
+
 void safeReadSymlink(filesystem::path filePath, string type, File &file) {
     try {
         file.type = type;
         file.name = filesystem::read_symlink(filePath).string();
-        file.node = to_string(getInode(file.name));
+        if (type == "FIFO" || type == "SOCK") {
+            file.node = extractInode(file.name);
+        } else {
+            file.node = to_string(getInode(file.name));
+        }
     } catch (exception &e) {
         file.type = "unknown";
         file.name = filesystem::absolute(filePath).string() + " (Permission denied)";
