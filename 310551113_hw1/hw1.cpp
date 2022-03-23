@@ -2,7 +2,6 @@
 //      1. COMMAND should be a filename or an absolute path?
 //      2. duplicate process (the first one and the last one)
 //      3. deleted FIFO
-//      4. filter (regular expression)
 #include <iostream>
 #include <string>
 #include <regex>
@@ -37,8 +36,6 @@ struct Filter {
     }
 };
 
-Filter f;
-
 struct MaxLength {
     int command;
     int pid;
@@ -57,8 +54,6 @@ struct MaxLength {
         name = 4;
     }
 };
-
-MaxLength maxlen;
 
 struct File {
     string fd;
@@ -103,6 +98,10 @@ struct Process {
         }
     }
 };
+
+Filter f;
+MaxLength maxlen;
+set<string> inodePool;
 
 void updateMax(Process &proc) {
     maxlen.command = max(maxlen.command, int(proc.command.size()));
@@ -205,6 +204,7 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
             file.node = extractInode(file.name);
         } else {
             file.node = to_string(getInode(file.name));
+            inodePool.insert(file.node);
         }
     } catch (exception &e) {
         file.type = "unknown";
@@ -215,7 +215,7 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
 void getMappedFiles(string procEntryA, Process &proc) {
     ifstream file(procEntryA);
     string line;
-    set<string> inodePool;
+    inodePool.clear();
     while (getline(file, line)) {
         File file;
         file.fd = "mem";
