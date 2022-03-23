@@ -154,7 +154,7 @@ string getCommand(string procEntryA) { // "proc/[pid]/cmdline" & split by '\0'
 
 string processCommand(string command) {
     int slash = command.find('/');
-    while (slash) {
+    while (slash != -1) {
         command = command.substr(slash + 1, command.size() - slash - 1);
         slash = command.find('/');
         cout << slash << '\n';
