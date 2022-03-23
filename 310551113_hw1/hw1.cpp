@@ -202,6 +202,10 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
     try {
         file.type = type;
         file.name = filesystem::read_symlink(filePath).string();
+        int del = file.name.find("(deleted)");
+        if (del) {
+            file.name = file.name.substr(0, del);
+        }
         if (type == "FIFO" || type == "SOCK") {
             file.node = to_string(getInode(filesystem::absolute(filePath).string()));
             if (file.node == "-1") {
