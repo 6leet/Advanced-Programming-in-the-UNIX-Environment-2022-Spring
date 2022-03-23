@@ -244,7 +244,7 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
         if (type == "FIFO" || type == "SOCK") {
             string filePathA = filesystem::absolute(filePath).string();
             file.node = to_string(getInode(filePathA));
-            file.fd += getMode(file.name);
+            file.fd += getMode(filePathA);
             if (file.node == "-1") {
                 file.node = extractInode(file.name);
             }
