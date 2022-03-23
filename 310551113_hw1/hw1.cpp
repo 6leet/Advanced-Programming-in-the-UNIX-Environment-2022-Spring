@@ -156,7 +156,6 @@ string processCommand(string command) {
     while (slash != -1) {
         command = command.substr(slash + 1, command.size() - slash - 1);
         slash = command.find('/');
-        cout << slash << '\n';
     }
     return command;
 }
