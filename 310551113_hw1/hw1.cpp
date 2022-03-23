@@ -194,7 +194,7 @@ string getMode(string filename) {
     // }
     struct stat buf;
     if (lstat(filename.c_str(), &buf) < 0) {
-        cerr << "fstat\n";
+        // cerr << "fstat\n";
         return "x";
     }
     // close(fd);
@@ -215,12 +215,12 @@ string getMode(string filename) {
 int getInode(string filename) {
     int fd = open(filename.c_str(), O_RDONLY);
     if (fd < 0) {
-        cerr << "open\n";
+        // cerr << "open\n";
         return -1;
     }
     struct stat buf;
     if (fstat(fd, &buf) < 0) {
-        cerr << "fstat\n";
+        // cerr << "fstat\n";
         return -1;
     }
     close(fd);
@@ -385,7 +385,6 @@ void iterateBase(string path, vector<Process> &processes) {
             string procPathR = filesystem::relative(entry.path(), basePath).string();
             string procPathA = filesystem::absolute(entry.path()).string();
                 if (isNumber(procPathR)) {
-                    cout << procPathR << '\n';
                     inodePool.clear();
                     Process proc(stoi(procPathR));
                     iterateProcess(entry.path(), proc);
