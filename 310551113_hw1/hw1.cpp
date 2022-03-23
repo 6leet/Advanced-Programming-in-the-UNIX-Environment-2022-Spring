@@ -202,8 +202,8 @@ string getMode(string filename) {
     }
     // close(fd);
     string mode = "";
-    if (buf.st_mode & S_IRUSR) {
-        mode = "r";
+    if (buf.st_mode & S_IWUSR) {
+        mode = "w";
     }
     // if (buf.st_mode & S_IWUSR) {
     //     if (mode == "r") {
