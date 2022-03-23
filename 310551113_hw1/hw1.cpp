@@ -202,11 +202,11 @@ string getMode(string filename) {
     }
     close(fd);
     string mode = "";
-    if ((buf.st_mode & 0000600) == 0000600) {
+    if ((buf.st_mode / 100) >= 6) {
         mode = "u";
-    } else if ((buf.st_mode & 0000400) == 0000400) {
+    } else if ((buf.st_mode / 100) >= 4) {
         mode = "r";
-    } else if ((buf.st_mode & 0000200) == 0000200) {
+    } else if ((buf.st_mode / 100) >= 2) {
         mode = "w";
     }
     return mode;
