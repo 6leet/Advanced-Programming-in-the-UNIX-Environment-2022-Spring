@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <set>
 #include <fcntl.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -185,6 +186,7 @@ int getInode(string filename) {
         cerr << "fstat\n";
         return -1;
     }
+    close(fd);
     return buf.st_ino;
 }
 
@@ -233,6 +235,34 @@ void getMappedFiles(string procEntryA, Process &proc) {
     }
 }
 
+void iterateFd(filesystem::path fdPath, Process &proc) {
+    for (auto const& entry : filesystem::directory_iterator{fdPath}) {
+        File file;
+        file.fd = filesystem::absolute(entry.path()).filename();
+        file.name = filesystem::read_symlink(entry.path()).string();
+        if (entry.is_directory()) {
+            file.type = "DIR";
+            safeReadSymlink(entry.path(), "DIR", file);
+        } else if (entry.is_regular_file()) {
+            file.type = "REG";
+            safeReadSymlink(entry.path(), "REG", file);
+        } else if (entry.is_character_file()) {
+            file.type = "CHR";
+            safeReadSymlink(entry.path(), "CHR", file);
+        } else if (entry.is_fifo()) {
+            file.type = "FIFO";
+            safeReadSymlink(entry.path(), "FIFO", file);
+        } else if (entry.is_socket()) {
+            file.type = "SOCK";
+            safeReadSymlink(entry.path(), "SOCK", file);
+        } else if (entry.is_other()) {
+            file.type = "unknown";
+            safeReadSymlink(entry.path(), "unknown", file);
+        }
+        proc.files.push_back(file);
+    }
+}
+
 void iterateProcess(filesystem::path procPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{procPath}) {
         string procEntryA = filesystem::absolute(entry.path()).string();
@@ -265,6 +295,16 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
         } else if (procEntryF == "maps") {
             // FD: mem
             getMappedFiles(procEntryA, proc);
+        } else if (procEntryF == "fd") {
+            // Fd: [0-9][rwu]
+            try {
+                iterateFd(entry.path(), proc);
+            } catch (exception &e) {
+                File file;
+                file.fd = "NOFD";
+                file.name = filesystem::absolute(entry.path()).string() + " (permission denied)";
+                proc.files.push_back(file);
+            }
         }
     }
 }
