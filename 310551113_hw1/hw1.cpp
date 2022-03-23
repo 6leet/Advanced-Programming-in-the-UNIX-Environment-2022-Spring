@@ -190,17 +190,17 @@ string getProcUser(string procEntryA) {
 }
 
 string getMode(string filename) {
-    int fd = open(filename.c_str(), O_RDONLY);
-    if (fd < 0) {
-        cerr << "open\n";
-        return "x";
-    }
+    // int fd = open(filename.c_str(), O_RDONLY);
+    // if (fd < 0) {
+    //     cerr << "open\n";
+    //     return "x";
+    // }
     struct stat buf;
-    if (fstat(fd, &buf) < 0) {
+    if (stat(filename.c_str(), &buf) < 0) {
         cerr << "fstat\n";
         return "x";
     }
-    close(fd);
+    // close(fd);
     string mode = "";
     int _mode = (buf.st_mode % 1000) / 100;
     if (_mode >= 6) {
