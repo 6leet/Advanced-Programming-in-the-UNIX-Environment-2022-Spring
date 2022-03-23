@@ -37,6 +37,8 @@ struct Filter {
     }
 };
 
+Filter f;
+
 struct MaxLength {
     int command;
     int pid;
@@ -88,18 +90,16 @@ struct Process {
         user = "";
         files.clear();
     }
-    void show(Filter f) {
+    void show() {
         for (int i = 0; i < files.size(); i++) {
-            if (f.file(files[i].name, files[i].type)) {
-                cout << setw(maxlen.command + 2) << left << command 
-                    << setw(maxlen.pid + 2) << left << pid 
-                    << setw(maxlen.user + 2) << left << user 
-                    << setw(maxlen.fd + 2) << left << files[i].fd
-                    << setw(maxlen.type + 2) << left << files[i].type
-                    << setw(maxlen.node + 2) << left << files[i].node
-                    << setw(maxlen.name + 2) << left << files[i].name
-                    << '\n';
-            }
+            cout << setw(maxlen.command + 2) << left << command 
+                << setw(maxlen.pid + 2) << left << pid 
+                << setw(maxlen.user + 2) << left << user 
+                << setw(maxlen.fd + 2) << left << files[i].fd
+                << setw(maxlen.type + 2) << left << files[i].type
+                << setw(maxlen.node + 2) << left << files[i].node
+                << setw(maxlen.name + 2) << left << files[i].name
+                << '\n';
         }
     }
 };
@@ -241,7 +241,9 @@ void getMappedFiles(string procEntryA, Process &proc) {
             i++;
         }
         if (file.node != "") {
-            proc.files.push_back(file);
+            if (f.file(file.name, file.type)) {
+                proc.files.push_back(file);
+            }
         }
     }
 }
@@ -270,7 +272,9 @@ void iterateFd(filesystem::path fdPath, Process &proc) {
             file.type = "unknown";
             safeReadSymlink(entry.path(), "unknown", file);
         }
-        proc.files.push_back(file);
+        if (f.file(file.name, file.type)) {
+            proc.files.push_back(file);
+        }
     }
 }
 
@@ -289,19 +293,25 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
             File file;
             file.fd = "cwd";
             safeReadSymlink(entry.path(), "DIR", file);
-            proc.files.push_back(file);
+            if (f.file(file.name, file.type)) {
+                proc.files.push_back(file);
+            }
         } else if (procEntryF == "exe") {             
             // FD: txt
             File file;
             file.fd = "txt";
             safeReadSymlink(entry.path(), "REG", file);
-            proc.files.push_back(file);
+            if (f.file(file.name, file.type)) {
+                proc.files.push_back(file);
+            }
         } else if (procEntryF == "root") {
             // FD: rtd
             File file;
             file.fd = "rtd";
             safeReadSymlink(entry.path(), "DIR", file);
-            proc.files.push_back(file);
+            if (f.file(file.name, file.type)) {
+                proc.files.push_back(file);
+            }
         } else if (procEntryF == "maps") {
             // FD: mem
             getMappedFiles(procEntryA, proc);
@@ -313,7 +323,9 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
                 File file;
                 file.fd = "NOFD";
                 file.name = filesystem::absolute(entry.path()).string() + " (permission denied)";
-                proc.files.push_back(file);
+                if (f.file(file.name, file.type)) {
+                    proc.files.push_back(file);
+                }
             }
         }
     }
@@ -328,14 +340,16 @@ void iterateBase(string path, vector<Process> &processes) {
             if (isNumber(procPathR)) {
                 Process proc(stoi(procPathR));
                 iterateProcess(entry.path(), proc);
-                updateMax(proc);
-                processes.push_back(proc);
+                if (f.process(proc.command)) {
+                    updateMax(proc);
+                    processes.push_back(proc);
+                }
             }
         }
     }
 }
 
-void output(vector<Process> processes, Filter f) {
+void output(vector<Process> processes) {
     cout << setw(maxlen.command + 2) << left << "COMMAND" 
         << setw(maxlen.pid + 2) << left << "PID" 
         << setw(maxlen.user + 2) << left << "USER" 
@@ -346,15 +360,13 @@ void output(vector<Process> processes, Filter f) {
         << '\n';
 
     for (int i = 0; i < processes.size(); i++) {
-        if (f.process(processes[i].command)) {
-            processes[i].show(f);
-        }
+        processes[i].show();
     } 
 }
 
 int main(int argc, char *argv[]) {
-    Filter f = setFilter(argc, argv);
+    f = setFilter(argc, argv);
     vector<Process> processes;
     iterateBase("/proc", processes);
-    output(processes, f);
+    output(processes);
 }
