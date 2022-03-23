@@ -1,5 +1,7 @@
 //  todo: 
-//      1. duplicate process (the first one and the last one)
+//      1. order: cwd, txt, rtd, mem ...
+//      2. when to kill whole pid
+//      3. which to take, symlink or linked file?
 #include <iostream>
 #include <string>
 #include <regex>
