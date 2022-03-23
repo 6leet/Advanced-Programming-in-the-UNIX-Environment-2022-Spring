@@ -122,9 +122,9 @@ Filter setFilter(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         if (string(argv[i]) == "-c") {
             f.command = regex(argv[++i]);
-        } else if (string(argv[i]) == "-t") {
-            f.filename = regex(argv[++i]);
         } else if (string(argv[i]) == "-f") {
+            f.filename = regex(argv[++i]);
+        } else if (string(argv[i]) == "-t") {
             f.type = regex(argv[++i]);
         }
     }
