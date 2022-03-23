@@ -1,7 +1,6 @@
 //  todo: 
 //      1. COMMAND should be a filename or an absolute path?
 //      2. duplicate process (the first one and the last one)
-//      3. deleted FIFO
 #include <iostream>
 #include <string>
 #include <regex>
@@ -153,6 +152,14 @@ string getCommand(string procEntryA) { // "proc/[pid]/cmdline" & split by '\0'
     return command;
 }
 
+string processCommand(string command) {
+    int slash;
+    while (slash = command.find('/')) {
+        command = command.substr(slash + 1, command.size() - slash - 1);
+    }
+    return command;
+}
+
 uid_t getProcUid(string procEntryA) { // "proc/[pid]/status"
     ifstream file(procEntryA);
     string line;
@@ -293,6 +300,7 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
         if (procEntryF == "cmdline") {
             // COMMAND
             proc.command = getCommand(procEntryA);
+            proc.command = processCommand(proc.command);
         } else if (procEntryF == "status") { 
             // USER
             proc.user = getProcUser(procEntryA);
