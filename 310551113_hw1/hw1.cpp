@@ -196,7 +196,7 @@ string getMode(string filename) {
     //     return "x";
     // }
     struct stat buf;
-    if (stat(filename.c_str(), &buf) < 0) {
+    if (lstat(filename.c_str(), &buf) < 0) {
         cerr << "fstat\n";
         return "x";
     }
