@@ -212,7 +212,7 @@ string getMode(string filename) {
             mode = "w";
         }
     }
-    return to_string(buf.st_mode);
+    return mode;
 }
 
 int getInode(string filename) {
