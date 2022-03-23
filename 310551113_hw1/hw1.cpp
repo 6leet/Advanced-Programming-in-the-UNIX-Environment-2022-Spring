@@ -203,14 +203,14 @@ string getMode(string filename) {
     // close(fd);
     string mode = "";
     if (buf.st_mode & S_IRUSR) {
-        mode += "r";
-    } else {
-        mode += "-";
+        mode = "r";
     }
     if (buf.st_mode & S_IWUSR) {
-        mode += "w";
-    } else {
-        mode += "-";
+        if (mode == "r" ) {
+            mode = "u";
+        } else {
+            mode = "w";
+        }
     }
     return mode;
 }
