@@ -189,6 +189,29 @@ string getProcUser(string procEntryA) {
     return pwd->pw_name;
 }
 
+string getMode(string filename) {
+    int fd = open(filename.c_str(), O_RDONLY);
+    if (fd < 0) {
+        cerr << "open\n";
+        return "x";
+    }
+    struct stat buf;
+    if (fstat(fd, &buf) < 0) {
+        cerr << "fstat\n";
+        return "x";
+    }
+    close(fd);
+    string mode = "";
+    if ((buf.st_mode & 0000600) == 0000600) {
+        mode = "u";
+    } else if ((buf.st_mode & 0000400) == 0000400) {
+        mode = "r";
+    } else if ((buf.st_mode & 0000200) == 0000200) {
+        mode = "w";
+    }
+    return mode;
+}
+
 int getInode(string filename) {
     int fd = open(filename.c_str(), O_RDONLY);
     if (fd < 0) {
@@ -275,6 +298,7 @@ void iterateFd(filesystem::path fdPath, Process &proc) {
         if (entry.is_directory()) {
             file.type = "DIR";
             safeReadSymlink(entry.path(), "DIR", file);
+            
         } else if (entry.is_regular_file()) {
             file.type = "REG";
             safeReadSymlink(entry.path(), "REG", file);
