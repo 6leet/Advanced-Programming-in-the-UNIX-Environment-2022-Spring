@@ -203,8 +203,10 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
         file.type = type;
         file.name = filesystem::read_symlink(filePath).string();
         if (type == "FIFO" || type == "SOCK") {
-            // file.node = extractInode(file.name);
             file.node = to_string(getInode(filesystem::absolute(filePath).string()));
+            if (file.node == "-1") {
+                file.node = extractInode(file.name);
+            }
         } else {
             file.node = to_string(getInode(file.name));
             inodePool.insert(file.node);
