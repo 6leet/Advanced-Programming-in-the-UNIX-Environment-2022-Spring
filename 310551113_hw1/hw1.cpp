@@ -121,11 +121,11 @@ Filter setFilter(int argc, char *argv[]) {
     Filter f;
     for (int i = 0; i < argc; i++) {
         if (string(argv[i]) == "-c") {
-            f.command = regex(argv[i++]);
+            f.command = regex(argv[++i]);
         } else if (string(argv[i]) == "-t") {
-            f.filename = regex(argv[i++]);
+            f.filename = regex(argv[++i]);
         } else if (string(argv[i]) == "-f") {
-            f.type = regex(argv[i++]);
+            f.type = regex(argv[++i]);
         }
     }
     return f;
