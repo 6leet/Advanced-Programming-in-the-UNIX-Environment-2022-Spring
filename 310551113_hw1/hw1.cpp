@@ -1,8 +1,5 @@
 //  todo: 
-//      1. COMMAND should be a filename or an absolute path?
-//      2. duplicate process (the first one and the last one)
-//      3. Because a running process in the system could be terminated at any time, your program may encounter a race condition that an earlier check is successful for /proc/<pid>,, 
-//         but latter accesses to files in /proc/<pid> directory are failed. Your program should be able to handle cases like this properly.
+//      1. duplicate process (the first one and the last one)
 #include <iostream>
 #include <string>
 #include <regex>
@@ -388,6 +385,7 @@ void iterateBase(string path, vector<Process> &processes) {
             string procPathR = filesystem::relative(entry.path(), basePath).string();
             string procPathA = filesystem::absolute(entry.path()).string();
                 if (isNumber(procPathR)) {
+                    cout << procPathR << '\n';
                     inodePool.clear();
                     Process proc(stoi(procPathR));
                     iterateProcess(entry.path(), proc);
