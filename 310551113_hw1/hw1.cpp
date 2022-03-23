@@ -217,7 +217,6 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
 void getMappedFiles(string procEntryA, Process &proc) {
     ifstream file(procEntryA);
     string line;
-    inodePool.clear();
     while (getline(file, line)) {
         File file;
         file.fd = "mem";
@@ -340,6 +339,7 @@ void iterateBase(string path, vector<Process> &processes) {
             string procPathR = filesystem::relative(entry.path(), basePath).string();
             string procPathA = filesystem::absolute(entry.path()).string();
             if (isNumber(procPathR)) {
+                inodePool.clear();
                 Process proc(stoi(procPathR));
                 iterateProcess(entry.path(), proc);
                 if (f.process(proc.command)) {
