@@ -36,6 +36,8 @@ struct Filter {
     }
 };
 
+Filter f;
+
 struct MaxLength {
     int command;
     int pid;
@@ -54,6 +56,8 @@ struct MaxLength {
         name = 4;
     }
 };
+
+MaxLength maxlen;
 
 struct File {
     string fd;
@@ -99,8 +103,6 @@ struct Process {
     }
 };
 
-Filter f;
-MaxLength maxlen;
 set<string> inodePool;
 
 void updateMax(Process &proc) {
