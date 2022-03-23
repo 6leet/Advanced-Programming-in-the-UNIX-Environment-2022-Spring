@@ -191,7 +191,7 @@ int getInode(string filename) {
 }
 
 string extractInode(string filename) {
-    int s = filename.find('['), t = filename.find(']');
+    int s = filename.find('[') + 1, t = filename.find(']') - 1;
     return filename.substr(s, t - s + 1);
 }
 
