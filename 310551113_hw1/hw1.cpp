@@ -237,12 +237,12 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
     try {
         file.type = type;
         file.name = filesystem::read_symlink(filePath).string();
+        string filePathA = filesystem::absolute(filePath).string();
         int del = file.name.find("(deleted)");
         if (del) {
             file.name = file.name.substr(0, del);
         }
         if (type == "FIFO" || type == "SOCK") {
-            string filePathA = filesystem::absolute(filePath).string();
             file.node = to_string(getInode(filePathA));
             file.fd += getMode(filePathA);
             if (file.node == "-1") {
@@ -250,7 +250,7 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
             }
         } else {
             file.node = to_string(getInode(file.name));
-            file.fd += getMode(file.name);
+            file.fd += getMode(filePathA);
             inodePool.insert(file.node);
         }
     } catch (exception &e) {
