@@ -241,12 +241,15 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
             file.name = file.name.substr(0, del);
         }
         if (type == "FIFO" || type == "SOCK") {
-            file.node = to_string(getInode(filesystem::absolute(filePath).string()));
+            string filePathA = filesystem::absolute(filePath).string();
+            file.node = to_string(getInode(filePathA));
+            file.fd += getMode(filePathA);
             if (file.node == "-1") {
                 file.node = extractInode(file.name);
             }
         } else {
             file.node = to_string(getInode(file.name));
+            file.fd += getMode(file.name);
             inodePool.insert(file.node);
         }
     } catch (exception &e) {
@@ -298,7 +301,6 @@ void iterateFd(filesystem::path fdPath, Process &proc) {
         if (entry.is_directory()) {
             file.type = "DIR";
             safeReadSymlink(entry.path(), "DIR", file);
-            
         } else if (entry.is_regular_file()) {
             file.type = "REG";
             safeReadSymlink(entry.path(), "REG", file);
