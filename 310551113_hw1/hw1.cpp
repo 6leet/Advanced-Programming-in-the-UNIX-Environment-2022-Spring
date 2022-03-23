@@ -20,6 +20,23 @@
 
 using namespace std;
 
+struct Filter {
+    regex command;
+    regex filename;
+    regex type;
+    Filter() {
+        command = regex(".*");
+        filename = regex(".*");
+        type = regex(".*");
+    }
+    bool process(string _command) {
+        return regex_search(_command, command);
+    }
+    bool file(string _filename, string _type) {
+        regex_search(_filename, filename) && regex_match(_type, type);
+    }
+};
+
 struct MaxLength {
     int command;
     int pid;
@@ -84,23 +101,6 @@ struct Process {
                     << '\n';
             }
         }
-    }
-};
-
-struct Filter {
-    regex command;
-    regex filename;
-    regex type;
-    Filter() {
-        command = regex(".*");
-        filename = regex(".*");
-        type = regex(".*");
-    }
-    bool process(string _command) {
-        return regex_search(_command, command);
-    }
-    bool file(string _filename, string _type) {
-        regex_search(_filename, filename) && regex_match(_type, type);
     }
 };
 
