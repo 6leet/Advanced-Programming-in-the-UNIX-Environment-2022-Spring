@@ -1,11 +1,8 @@
 //  todo: 
 //      1. COMMAND should be a filename or an absolute path?
-//      2. inode
-//      3. how to correctly get file type? (currently fill in the field by myself)
-//      4. duplicate process (the first one and the last one)
-//      5. [0-9]+[rwu] & NOFD
-//      6. symbolic link to pipe / socket (sample?)
-//      7. filter (regular expression)
+//      2. duplicate process (the first one and the last one)
+//      3. deleted FIFO
+//      4. filter (regular expression)
 #include <iostream>
 #include <string>
 #include <regex>
@@ -74,16 +71,18 @@ struct Process {
         user = "";
         files.clear();
     }
-    void show() {
+    void show(Filter f) {
         for (int i = 0; i < files.size(); i++) {
-            cout << setw(maxlen.command + 2) << left << command 
-                << setw(maxlen.pid + 2) << left << pid 
-                << setw(maxlen.user + 2) << left << user 
-                << setw(maxlen.fd + 2) << left << files[i].fd
-                << setw(maxlen.type + 2) << left << files[i].type
-                << setw(maxlen.node + 2) << left << files[i].node
-                << setw(maxlen.name + 2) << left << files[i].name
-                << '\n';
+            if (f.file(files[i].name, files[i].type)) {
+                cout << setw(maxlen.command + 2) << left << command 
+                    << setw(maxlen.pid + 2) << left << pid 
+                    << setw(maxlen.user + 2) << left << user 
+                    << setw(maxlen.fd + 2) << left << files[i].fd
+                    << setw(maxlen.type + 2) << left << files[i].type
+                    << setw(maxlen.node + 2) << left << files[i].node
+                    << setw(maxlen.name + 2) << left << files[i].name
+                    << '\n';
+            }
         }
     }
 };
@@ -97,8 +96,11 @@ struct Filter {
         filename = regex(".*");
         type = regex(".*");
     }
-    bool process(string _command, string _filename, string _type) {
-        return regex_search(_command, command) && regex_search(_filename, filename) && regex_match(_type, type);
+    bool process(string _command) {
+        return regex_search(_command, command);
+    }
+    bool file(string _filename, string _type) {
+        regex_search(_filename, filename) && regex_match(_type, type);
     }
 };
 
@@ -282,7 +284,6 @@ void iterateProcess(filesystem::path procPath, Process &proc) {
         } else if (procEntryF == "status") { 
             // USER
             proc.user = getProcUser(procEntryA);
-            
         } else if (procEntryF == "cwd") { 
             // FD: current working directory
             File file;
@@ -334,7 +335,7 @@ void iterateBase(string path, vector<Process> &processes) {
     }
 }
 
-void output(vector<Process> processes) {
+void output(vector<Process> processes, Filter f) {
     cout << setw(maxlen.command + 2) << left << "COMMAND" 
         << setw(maxlen.pid + 2) << left << "PID" 
         << setw(maxlen.user + 2) << left << "USER" 
@@ -343,14 +344,17 @@ void output(vector<Process> processes) {
         << setw(maxlen.node + 2) << left << "NODE"
         << setw(maxlen.name + 2) << left << "NAME"
         << '\n';
+
     for (int i = 0; i < processes.size(); i++) {
-        processes[i].show();
+        if (f.process(processes[i].command)) {
+            processes[i].show(f);
+        }
     } 
 }
 
 int main(int argc, char *argv[]) {
-    setFilter(argc, argv);
+    Filter f = setFilter(argc, argv);
     vector<Process> processes;
     iterateBase("/proc", processes);
-    output(processes);
+    output(processes, f);
 }
