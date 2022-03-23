@@ -210,7 +210,7 @@ string getMode(string filename) {
     } else if (_mode >= 2) {
         mode = "w";
     }
-    return to_string(_mode);
+    return " " + to_string(buf.st_mode);
 }
 
 int getInode(string filename) {
