@@ -202,14 +202,15 @@ string getMode(string filename) {
     }
     close(fd);
     string mode = "";
-    if ((buf.st_mode / 100) >= 6) {
+    int _mode = (buf.st_mode % 1000) / 100;
+    if (_mode >= 6) {
         mode = "u";
-    } else if ((buf.st_mode / 100) >= 4) {
+    } else if (_mode >= 4) {
         mode = "r";
-    } else if ((buf.st_mode / 100) >= 2) {
+    } else if (_mode >= 2) {
         mode = "w";
     }
-    return to_string(buf.st_mode);
+    return mode;
 }
 
 int getInode(string filename) {
