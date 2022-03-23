@@ -205,13 +205,13 @@ string getMode(string filename) {
     if (buf.st_mode & S_IRUSR) {
         mode = "r";
     }
-    if (buf.st_mode & S_IWUSR) {
-        if (mode == "r") {
-            mode = "u";
-        } else {
-            mode = "w";
-        }
-    }
+    // if (buf.st_mode & S_IWUSR) {
+    //     if (mode == "r") {
+    //         mode = "u";
+    //     } else {
+    //         mode = "w";
+    //     }
+    // }
     return mode;
 }
 
