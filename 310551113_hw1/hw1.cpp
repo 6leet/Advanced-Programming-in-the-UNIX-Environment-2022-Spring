@@ -202,15 +202,16 @@ string getMode(string filename) {
     }
     // close(fd);
     string mode = "";
-    int _mode = (buf.st_mode % 1000) / 100;
-    if (_mode >= 6) {
-        mode = "u";
-    } else if (_mode >= 4) {
+    if (buf.st_mode & S_IRUSR) {
         mode = "r";
-    } else if (_mode >= 2) {
-        mode = "w";
+    if (buf.st_mode & S_IWUSR) {
+        if (mode == "r") {
+            mode = "u";
+        } else {
+            mode = "w";
+        }
     }
-    return filename + " " + to_string(buf.st_mode);
+    return to_string(buf.st_mode);
 }
 
 int getInode(string filename) {
@@ -250,7 +251,7 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
             }
         } else {
             file.node = to_string(getInode(file.name));
-            file.fd += getMode(filePathA);
+            file.fd += getMode(file.name);
             inodePool.insert(file.node);
         }
     } catch (exception &e) {
