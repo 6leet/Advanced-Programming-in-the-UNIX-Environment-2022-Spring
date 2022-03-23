@@ -381,7 +381,7 @@ void iterateBase(string path, vector<Process> &processes) {
     filesystem::path basePath{path};
     for (auto const& entry : filesystem::directory_iterator{basePath}) {
         try {
-            if (entry.is_directory()) {
+            if (entry.is_directory() && !entry.is_symlink()) {
             string procPathR = filesystem::relative(entry.path(), basePath).string();
             string procPathA = filesystem::absolute(entry.path()).string();
                 if (isNumber(procPathR)) {
