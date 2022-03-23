@@ -204,6 +204,7 @@ string getMode(string filename) {
     string mode = "";
     if (buf.st_mode & S_IRUSR) {
         mode = "r";
+    }
     if (buf.st_mode & S_IWUSR) {
         if (mode == "r") {
             mode = "u";
