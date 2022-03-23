@@ -246,13 +246,11 @@ void safeReadSymlink(filesystem::path filePath, string type, File &file) {
         }
         if (type == "FIFO" || type == "SOCK") {
             file.node = to_string(getInode(filePathA));
-            file.fd += getMode(filePathA);
             if (file.node == "-1") {
                 file.node = extractInode(file.name);
             }
         } else {
             file.node = to_string(getInode(file.name));
-            file.fd += getMode(file.name);
             inodePool.insert(file.node);
         }
     } catch (exception &e) {
@@ -299,6 +297,7 @@ void getMappedFiles(string procEntryA, Process &proc) {
 void iterateFd(filesystem::path fdPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{fdPath}) {
         File file;
+        string filePathA = filesystem::absolute(entry.path()).string();
         file.fd = filesystem::absolute(entry.path()).filename();
         file.name = filesystem::read_symlink(entry.path()).string();
         if (entry.is_directory()) {
@@ -320,6 +319,7 @@ void iterateFd(filesystem::path fdPath, Process &proc) {
             file.type = "unknown";
             safeReadSymlink(entry.path(), "unknown", file);
         }
+        file.fd += getMode(filePathA);
         if (f.file(file.name, file.type)) {
             proc.files.push_back(file);
         }
