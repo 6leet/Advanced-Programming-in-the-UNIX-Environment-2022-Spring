@@ -340,8 +340,10 @@ void iterateBase(string path, vector<Process> &processes) {
             if (isNumber(procPathR)) {
                 Process proc(stoi(procPathR));
                 iterateProcess(entry.path(), proc);
-                updateMax(proc);
-                processes.push_back(proc);
+                if (f.process(proc.command)) {
+                    updateMax(proc);
+                    processes.push_back(proc);
+                }
             }
         }
     }
