@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <set>
 #include <fcntl.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -185,14 +186,24 @@ int getInode(string filename) {
         cerr << "fstat\n";
         return -1;
     }
+    close(fd);
     return buf.st_ino;
+}
+
+string extractInode(string filename) {
+    int s = filename.find('['), t = filename.find(']');
+    return filename.substr(s, t - s + 1);
 }
 
 void safeReadSymlink(filesystem::path filePath, string type, File &file) {
     try {
         file.type = type;
         file.name = filesystem::read_symlink(filePath).string();
-        file.node = to_string(getInode(file.name));
+        if (type == "FIFO" || type == "SOCK") {
+            file.node = extractInode(file.name);
+        } else {
+            file.node = to_string(getInode(file.name));
+        }
     } catch (exception &e) {
         file.type = "unknown";
         file.name = filesystem::absolute(filePath).string() + " (Permission denied)";
@@ -235,18 +246,29 @@ void getMappedFiles(string procEntryA, Process &proc) {
 
 void iterateFd(filesystem::path fdPath, Process &proc) {
     for (auto const& entry : filesystem::directory_iterator{fdPath}) {
-        cout << filesystem::read_symlink(entry.path()).string() << ": ";
-        if (entry.is_character_file()) {
-            cout << "character file\n";
+        File file;
+        file.fd = filesystem::absolute(entry.path()).filename();
+        file.name = filesystem::read_symlink(entry.path()).string();
+        if (entry.is_directory()) {
+            file.type = "DIR";
+            safeReadSymlink(entry.path(), "DIR", file);
+        } else if (entry.is_regular_file()) {
+            file.type = "REG";
+            safeReadSymlink(entry.path(), "REG", file);
+        } else if (entry.is_character_file()) {
+            file.type = "CHR";
+            safeReadSymlink(entry.path(), "CHR", file);
         } else if (entry.is_fifo()) {
-            cout << "fifo\n";
+            file.type = "FIFO";
+            safeReadSymlink(entry.path(), "FIFO", file);
         } else if (entry.is_socket()) {
-            cout << "socket\n";
+            file.type = "SOCK";
+            safeReadSymlink(entry.path(), "SOCK", file);
         } else if (entry.is_other()) {
-            cout << "other\n";
-        } else {
-            cout << '\n';
+            file.type = "unknown";
+            safeReadSymlink(entry.path(), "unknown", file);
         }
+        proc.files.push_back(file);
     }
 }
 
