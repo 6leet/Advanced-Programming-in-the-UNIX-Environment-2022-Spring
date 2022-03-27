@@ -255,9 +255,12 @@ vector<File> get_maps(string map_path, int &err) {
                 i++;
             }
             map_file.type = get_from_stat(map_file.name, "type", false, err);
+            if (map_file.type == "unknown") continue;
             if (err == 1) return vector<File>();
+
             map_file.node = get_from_stat(map_file.name, "node", false, err);
             if (err == 1) return vector<File>();
+            
             if (inode_pool.find(map_file.node) == inode_pool.end()) {
                 map_files.push_back(map_file);
                 inode_pool.insert(map_file.node);
