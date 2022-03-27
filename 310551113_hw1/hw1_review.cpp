@@ -1,3 +1,7 @@
+// 1. mem duplicate (inode_pool)
+// 2. clear (deleted)
+// 3. [heap] / [stack] / [vdso]
+// 4. wrong mem inode
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -5,6 +9,7 @@
 #include <string>
 #include <regex>
 #include <map>
+#include <set>
 #include <unistd.h>
 #include <dirent.h>
 #include <pwd.h>
@@ -57,14 +62,17 @@ struct File {
 struct Process {
     string command, pid, user;
     vector<File> files;
+    set<string> inode_pool;
     Process() {
         command = pid = user = "";
         files.clear();
+        inode_pool.clear();
     }
     Process(string _p) {
         command = user = "";
         pid = _p;
         files.clear();
+        inode_pool.string();
     }
 };
 
@@ -245,9 +253,9 @@ vector<File> get_maps(string map_path, int &err) {
                 }
                 i++;
             }
-            map_file.type = get_from_stat(map_path, "type", false, err);
+            map_file.type = get_from_stat(map_file.name, "type", false, err);
             if (err == 1) return vector<File>();
-            map_file.node = get_from_stat(map_path, "node", false, err);
+            map_file.node = get_from_stat(map_file.name, "node", false, err);
             if (err == 1) return vector<File>();
             map_files.push_back(map_file);
         }
