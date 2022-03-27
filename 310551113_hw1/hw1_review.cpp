@@ -249,7 +249,9 @@ vector<File> get_maps(string map_path, int &err) {
             if (err == 1) return vector<File>();
             map_file.node = get_from_stat(map_path, "node", false, err);
             if (err == 1) return vector<File>();
+            map_files.push_back(map_file);
         }
+        return map_files;
     }
 }
 
