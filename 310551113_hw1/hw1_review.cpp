@@ -191,6 +191,8 @@ string get_from_stat(string file_path, string target, bool through_link, int &er
         }
     } else if (target == "node") {
         return to_string(buf.st_ino);
+    } else {
+        return "";
     }
 }
 
@@ -209,6 +211,7 @@ File get_special_file(string pid_path, string fd, string filename, int &err) {
         if (err == 1) return File();
         file.node = get_from_stat(pid_path + filename, "node", true, err);
         if (err == 1) return File();
+        return file;
     }
 }
 
@@ -228,6 +231,8 @@ int iterate_pid(string pid_path, Process &process) {
         process.files.push_back(get_special_file(pid_path, fds[i], filenames[i], err));
         if (err == 1) return err;
     }
+
+    return 0;
 }
 
 int iterate_proc(string proc_path, vector<Process> &processes) {
