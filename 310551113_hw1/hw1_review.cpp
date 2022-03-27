@@ -211,6 +211,7 @@ File get_special_file(string pid_path, string fd, string filename, int &err) {
         if (err == 1) return File();
         file.node = get_from_stat(pid_path + filename, "node", true, err);
         if (err == 1) return File();
+        cout << file.fd << ' ' << file.name << ' ' << file.type << ' ' << file.node << '\n';
         return file;
     }
 }
