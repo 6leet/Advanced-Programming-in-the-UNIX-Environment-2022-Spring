@@ -267,8 +267,8 @@ void output(vector<Process> processes) {
         for (int j = 0; j < process.files.size(); j++) {
             File file = process.files[j];
             vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
-            for (int j = 0; j < cols.size(); j++) {
-                cout << setw(maxlen[columns[i]] + 2) << left << cols[i];
+            for (int k = 0; k < cols.size(); k++) {
+                cout << setw(maxlen[columns[k]] + 2) << left << cols[k];
             }
             cout << '\n';
         }
