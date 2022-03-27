@@ -244,6 +244,16 @@ vector<File> iterate_fd(string fd_path, int &err) { // haven't define return typ
                 return vector<File>();
             }
             fd_file.fd = link + mode;
+            fd_file.type = get_from_stat(fd_path + "/" + link, "type", false, err);
+            if (err == 1) {
+                cout << "fail at " << fd_path << '\n';
+                return vector<File>();
+            }
+            fd_file.node = get_from_stat(fd_path + "/" + link, "node", false, err);
+            if (err == 1) {
+                cout << "fail at " << fd_path << '\n';
+                return vector<File>();
+            }
             // fd_file.name = safe_readlink(fd_path + "/" + link, err);
             // if (err == 1) { // can't read, give up this /fd
             //     cout << "fail at " << fd_path << '\n';
