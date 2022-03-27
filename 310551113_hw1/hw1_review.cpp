@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <iomanip>
 #include <string>
 #include <regex>
@@ -148,7 +149,6 @@ string safe_readlink(string link_path, int &err) {
     err = 0;
     char buf[1024];
     ssize_t len;
-    cout << link_path << '\n';
     if ((len = readlink(link_path.c_str(), buf, sizeof(buf) - 1)) != -1) {
         buf[len] = '\0';
         return string(buf);
@@ -205,6 +205,8 @@ string get_from_stat(string file_path, string target, bool through_link, int &er
             }
         }
         return mode;
+    } else {
+        return "";
     }
 }
 
@@ -214,20 +216,44 @@ File get_special_file(string file_path, string fd, int &err) {
     file.fd = fd;
     file.name = safe_readlink(file_path, err);
     if (err == 1) return File();
-    // else if (err == -1) {
-    //     file.type = "unknown";
-    //     file.node = "";
-    // } 
-    else {
-        file.type = get_from_stat(file_path, "type", true, err);
-        if (err == 1) return File();
-        file.node = get_from_stat(file_path, "node", true, err);
-        if (err == 1) return File();
-        return file;
+    file.type = get_from_stat(file_path, "type", true, err);
+    if (err == 1) return File();
+    file.node = get_from_stat(file_path, "node", true, err);
+    if (err == 1) return File();
+    return file;
+}
+
+vector<File> get_maps(string map_path, err) {
+    err = 0;
+    ifstream file(map_path);
+    vector<File> map_files;
+    if (!file) {
+        err = 1;
+        return vector<File>();
+    } else {
+        string line;
+        while (getline(file, line)) {
+            File map_file;
+            map_file.fd = "mem";
+            stringstream ss(line);
+            string buf;
+            int i = 0;
+            while (ss >> buf) {
+                if (i == 5) {
+                    map_file.name = buf;
+                    break;
+                }
+                i++;
+            }
+            map_file.type = get_from_stat(file_path, "type", false, err);
+            if (err == 1) return vector<File>();
+            map_file.node = get_from_stat(file_path, "node", false, err);
+            if (err == 1) return vector<File>();
+        }
     }
 }
 
-vector<File> iterate_fd(string fd_path, int &err) { // haven't define return type yet
+vector<File> iterate_fd(string fd_path, int &err) {
     err = 0;
     DIR *dp = opendir(fd_path.c_str());
     vector<File> fd_files;
@@ -240,25 +266,14 @@ vector<File> iterate_fd(string fd_path, int &err) { // haven't define return typ
             string link(dir->d_name);
             if (is_number(link)) {
                 string mode = get_from_stat(fd_path + "/" + link, "mode", false, err);
-                if (err == 1) {
-                    cout << "fail at " << fd_path << ": mode\n";
-                    return vector<File>();
-                }
+                if (err == 1) return vector<File>();
                 fd_file.fd = link + mode;
                 fd_file.type = get_from_stat(fd_path + "/" + link, "type", true, err);
-                if (err == 1) {
-                    cout << "fail at " << fd_path << ": type\n";
-                    return vector<File>();
-                }
+                if (err == 1) return vector<File>();
                 fd_file.node = get_from_stat(fd_path + "/" + link, "node", true, err);
-                if (err == 1) {
-                    cout << "fail at " << fd_path << ": node\n";
-                    return vector<File>();
-                }
+                if (err == 1) return vector<File>();
                 fd_file.name = safe_readlink(fd_path + "/" + link, err);
-                if (err == 1) { // can't read, give up this /fd
-                    cout << "fail at " << fd_path << '\n';
-                }
+                if (err == 1) return vector<File>();
                 fd_files.push_back(fd_file);
             }
         }
@@ -283,6 +298,12 @@ int iterate_pid(string pid_path, Process &process) {
         if (err == 1) return err;
     }
 
+    // map
+    vector<File> map_files = get_maps(pid_path + "/maps", err);
+    if (err == 1) return err;
+    process.files.insert(process.files.end(), map_files.begin(), map_files.end());
+
+    // fd
     vector<File> fd_files = iterate_fd(pid_path + "/fd", err);
     process.files.insert(process.files.end(), fd_files.begin(), fd_files.end());
 
