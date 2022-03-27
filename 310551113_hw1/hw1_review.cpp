@@ -255,12 +255,12 @@ vector<File> get_maps(string map_path, int &err) {
                 i++;
             }
             map_file.type = get_from_stat(map_file.name, "type", false, err);
-            if (map_file.type == "unknown") continue;
+            if (map_file.type == "unknown") continue; // [heap] / [stack] / [vdso]
             if (err == 1) return vector<File>();
 
             map_file.node = get_from_stat(map_file.name, "node", false, err);
             if (err == 1) return vector<File>();
-            
+
             if (inode_pool.find(map_file.node) == inode_pool.end()) {
                 map_files.push_back(map_file);
                 inode_pool.insert(map_file.node);
@@ -350,7 +350,7 @@ int iterate_proc(string proc_path, vector<Process> &processes) {
     }
 }
 
-void output(vector<Process> processes) {
+void output(vector<Process> processes, Filter f) {
     for (int i = 0; i < columns.size(); i++) {
         cout << setw(maxlen[columns[i]] + 2) << left << columns[i];
     }
@@ -360,11 +360,13 @@ void output(vector<Process> processes) {
         Process process = processes[i];
         for (int j = 0; j < process.files.size(); j++) {
             File file = process.files[j];
-            vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
-            for (int k = 0; k < cols.size(); k++) {
-                cout << setw(maxlen[columns[k]] + 2) << left << cols[k];
+            if (f.filt(process.command, file.name, file.type)) {
+                vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
+                for (int k = 0; k < cols.size(); k++) {
+                    cout << setw(maxlen[columns[k]] + 2) << left << cols[k];
+                }
+                cout << '\n';
             }
-            cout << '\n';
         }
     }
 }
@@ -374,5 +376,5 @@ int main(int argc, char *argv[]) {
     init_maxlen();
     vector<Process> processes;
     iterate_proc("/proc", processes);
-    output(processes);
+    output(processes, f);
 }
