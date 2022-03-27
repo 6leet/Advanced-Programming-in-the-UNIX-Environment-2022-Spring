@@ -89,7 +89,7 @@ int get_user() {
 
 int iterate_pid(string pid_path, Process &process) {
     int err;
-    get_command(pid_path, err);
+    cout << get_command(pid_path, err) << '\n';
     if (err) return 1;
 
     get_user();
