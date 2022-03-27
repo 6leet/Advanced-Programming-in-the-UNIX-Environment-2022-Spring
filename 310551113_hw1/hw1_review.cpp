@@ -254,11 +254,11 @@ vector<File> iterate_fd(string fd_path, int &err) { // haven't define return typ
                 cout << "fail at " << fd_path << '\n';
                 return vector<File>();
             }
-            fd_file.name = safe_readlink(fd_path + "/" + link, err);
-            if (err == 1) { // can't read, give up this /fd
-                cout << "fail at " << fd_path << '\n';
-                // return vector<File>();
-            }
+            // fd_file.name = safe_readlink(fd_path + "/" + link, err);
+            // if (err == 1) { // can't read, give up this /fd
+            //     cout << "fail at " << fd_path << '\n';
+            //     // return vector<File>();
+            // }
             fd_files.push_back(fd_file);
         }
         return fd_files;
