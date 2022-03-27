@@ -201,9 +201,7 @@ File get_special_file(string pid_path, string fd, string filename, int &err) {
     err = 0;
     File file;
     file.fd = fd;
-    cout << file.fd << ' ';
     file.name = safe_readlink(pid_path + "/" + filename, err);
-    cout << file.name << ' ';
     if (err == 1) return File();
     // else if (err == -1) {
     //     file.type = "unknown";
@@ -211,12 +209,9 @@ File get_special_file(string pid_path, string fd, string filename, int &err) {
     // } 
     else {
         file.type = get_from_stat(pid_path + "/" + filename, "type", true, err);
-        cout << file.type << ' ';
         if (err == 1) return File();
         file.node = get_from_stat(pid_path + "/" + filename, "node", true, err);
-        cout << file.node << ' ';
         if (err == 1) return File();
-        // cout << file.fd << ' ' << file.name << ' ' << file.type << ' ' << file.node << '\n';
         return file;
     }
 }
@@ -225,11 +220,9 @@ int iterate_pid(string pid_path, Process &process) {
     int err;
 
     process.command = get_command(pid_path, err);
-    cout << process.command << ' ';
     if (err == 1) return 1;
 
     process.user = get_user(pid_path, err);
-    cout << process.user << ' ';
     if (err == 1) return 1;
 
     // cwd, rtd, txt
