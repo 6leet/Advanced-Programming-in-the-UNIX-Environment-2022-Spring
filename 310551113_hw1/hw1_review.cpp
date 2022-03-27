@@ -245,9 +245,9 @@ vector<File> get_maps(string map_path, int &err) {
                 }
                 i++;
             }
-            map_file.type = get_from_stat(file_path, "type", false, err);
+            map_file.type = get_from_stat(map_path, "type", false, err);
             if (err == 1) return vector<File>();
-            map_file.node = get_from_stat(file_path, "node", false, err);
+            map_file.node = get_from_stat(map_path, "node", false, err);
             if (err == 1) return vector<File>();
         }
     }
