@@ -277,6 +277,7 @@ void output(vector<Process> processes) {
 
 int main(int argc, char *argv[]) {
     Filter f(argc, argv);
+    init_maxlen();
     vector<Process> processes;
     iterate_proc("/proc", processes);
     output(processes);
