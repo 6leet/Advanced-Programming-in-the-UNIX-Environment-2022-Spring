@@ -244,12 +244,12 @@ vector<File> iterate_fd(string fd_path, int &err) { // haven't define return typ
                 return vector<File>();
             }
             fd_file.fd = link + mode;
-            fd_file.type = get_from_stat(fd_path + "/" + link, "type", false, err);
+            fd_file.type = get_from_stat(fd_path + "/" + link, "type", true, err);
             if (err == 1) {
                 cout << "fail at " << fd_path << '\n';
                 return vector<File>();
             }
-            fd_file.node = get_from_stat(fd_path + "/" + link, "node", false, err);
+            fd_file.node = get_from_stat(fd_path + "/" + link, "node", true, err);
             if (err == 1) {
                 cout << "fail at " << fd_path << '\n';
                 return vector<File>();
