@@ -110,7 +110,7 @@ int iterate_proc(string proc_path, vector<Process> &processes) {
             string pid(dir->d_name);
             if (is_number(pid)) {
                 Process process(pid);
-                int err = iterate_pid(proc_path + pid, process);
+                int err = iterate_pid(proc_path + "/" + pid, process);
                 if (!err) {
                     processes.push_back(process);
                 }
