@@ -20,6 +20,7 @@ using namespace std;
 
 map<string, int> maxlen;
 vector<string> columns{"COMMAND", "PID", "USER", "FD", "TYPE", "NODE", "NAME"};
+set<string> inode_pool;
 
 struct Filter {
     regex command, filename, type;
@@ -62,17 +63,14 @@ struct File {
 struct Process {
     string command, pid, user;
     vector<File> files;
-    set<string> inode_pool;
     Process() {
         command = pid = user = "";
         files.clear();
-        inode_pool.clear();
     }
     Process(string _p) {
         command = user = "";
         pid = _p;
         files.clear();
-        inode_pool.clear();
     }
 };
 
@@ -228,6 +226,9 @@ File get_special_file(string file_path, string fd, int &err) {
     if (err == 1) return File();
     file.node = get_from_stat(file_path, "node", true, err);
     if (err == 1) return File();
+    if (fd == "txt") {
+        inode_pool.insert(file.node);
+    }
     return file;
 }
 
@@ -257,7 +258,10 @@ vector<File> get_maps(string map_path, int &err) {
             if (err == 1) return vector<File>();
             map_file.node = get_from_stat(map_file.name, "node", false, err);
             if (err == 1) return vector<File>();
-            map_files.push_back(map_file);
+            if (inode_pool.find(map_file.node) == inode_pool.end()) {
+                map_files.push_back(map_file);
+                inode_pool.insert(map_file.node);
+            }
         }
         return map_files;
     }
@@ -292,6 +296,8 @@ vector<File> iterate_fd(string fd_path, int &err) {
 }
 
 int iterate_pid(string pid_path, Process &process) {
+    inode_pool.clear();
+
     int err;
 
     process.command = get_command(pid_path, err);
