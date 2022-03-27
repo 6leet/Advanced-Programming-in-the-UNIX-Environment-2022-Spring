@@ -87,7 +87,7 @@ void update_maxlen(Process &process) {
         File file = process.files[i];
         vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
         for (int j = 0; j < columns.size(); j++) {
-            maxlen[columns[j]] = cols[j].size();
+            maxlen[columns[j]] = max(maxlen[columns[j]], int(cols[j].size()));
         }
     }
 }
@@ -175,7 +175,7 @@ string get_from_stat(string file_path, string target, bool through_link, int &er
         if (errno = EACCES) {
             err = -1; // permission denied
             if (target == "type") return "unknown";
-            else if (target == "node") return "";
+            else return "";
         } else {
             err = 1;
             return "";
@@ -192,27 +192,65 @@ string get_from_stat(string file_path, string target, bool through_link, int &er
         }
     } else if (target == "node") {
         return to_string(buf.st_ino);
-    } else {
-        return "";
+    } else if (target == "mode") {
+        string mode = "";
+        if (buf.st_mode & S_IRUSR) {
+            mode = "r";
+        }
+        if (buf.st_mode & S_IWUSR) {
+            if (mode == "r" ) {
+                mode = "u";
+            } else {
+                mode = "w";
+            }
+        }
+        return mode;
     }
 }
 
-File get_special_file(string pid_path, string fd, string filename, int &err) {
+File get_special_file(string file_path, string fd, int &err) {
     err = 0;
     File file;
     file.fd = fd;
-    file.name = safe_readlink(pid_path + "/" + filename, err);
+    file.name = safe_readlink(file_path, err);
     if (err == 1) return File();
     // else if (err == -1) {
     //     file.type = "unknown";
     //     file.node = "";
     // } 
     else {
-        file.type = get_from_stat(pid_path + "/" + filename, "type", true, err);
+        file.type = get_from_stat(file_path, "type", true, err);
         if (err == 1) return File();
-        file.node = get_from_stat(pid_path + "/" + filename, "node", true, err);
+        file.node = get_from_stat(file_path, "node", true, err);
         if (err == 1) return File();
         return file;
+    }
+}
+
+vector<File> iterate_fd(string fd_path, int &err) { // haven't define return type yet
+    err = 0;
+    DIR *dp = opendir(fd_path.c_str());
+    vector<File> fd_files;
+    if (dp == NULL) {
+        return vector<File>();
+    } else {
+        struct dirent *dir;
+        while ((dir = readdir(dp)) != NULL) {
+            File fd_file;
+            string link(dir->d_name);
+            string mode = get_from_stat(fd_path + "/" + link, "mode", false, err);
+            if (err == 1) {
+                cout << "fail at " << fd_path << '\n';
+                return vector<File>();
+            }
+            fd_file.fd = link + mode;
+            fd_file.name = safe_readlink(fd_path + "/" + link, err);
+            if (err == 1) { // can't read, give up this /fd
+                cout << "fail at " << fd_path << '\n';
+                return vector<File>();
+            }
+        }
+        return fd_files;
     }
 }
 
@@ -229,9 +267,11 @@ int iterate_pid(string pid_path, Process &process) {
     vector<string> fds{"cwd", "rtd", "txt"};
     vector<string> filenames{"cwd", "root", "exe"};
     for (int i = 0; i < fds.size(); i++) {
-        process.files.push_back(get_special_file(pid_path, fds[i], filenames[i], err));
+        process.files.push_back(get_special_file(pid_path + "/" + filenames[i], fds[i], err));
         if (err == 1) return err;
     }
+
+    vector<File> fd_files = iterate_fd(pid_path + "/fd", err);
 
     return 0;
 }
