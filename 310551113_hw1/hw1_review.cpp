@@ -77,6 +77,7 @@ void iterateProc(string procPath, vector<Process> &processes) {
         struct dirent *direntp = readdir(dp);
         while (direntp != NULL) {
             cout << direntp->d_name << '\n';
+            direntp = readdir(dp);
         }
     }
 }
