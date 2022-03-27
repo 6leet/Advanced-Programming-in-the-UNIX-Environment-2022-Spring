@@ -89,12 +89,14 @@ void init_maxlen() {
     }
 }
 
-void update_maxlen(Process &process) {
+void update_maxlen(Process &process, Filter &f) {
     for (int i = 0; i < process.files.size(); i++) {
         File file = process.files[i];
         vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
-        for (int j = 0; j < columns.size(); j++) {
-            maxlen[columns[j]] = max(maxlen[columns[j]], int(cols[j].size()));
+        if (f.filt(process.command, file.name, file.type)) {
+            for (int j = 0; j < columns.size(); j++) {
+                maxlen[columns[j]] = max(maxlen[columns[j]], int(cols[j].size()));
+            }
         }
     }
 }
@@ -329,7 +331,7 @@ int iterate_pid(string pid_path, Process &process) {
     return 0;
 }
 
-int iterate_proc(string proc_path, vector<Process> &processes) {
+void iterate_proc(string proc_path, vector<Process> &processes, Filter &f) {
     DIR *dp = opendir(proc_path.c_str());
     if (dp == NULL) {
         cerr << "can't open /proc.\n";
@@ -343,14 +345,14 @@ int iterate_proc(string proc_path, vector<Process> &processes) {
                 int err = iterate_pid(proc_path + "/" + pid, process);
                 if (err != 1) {
                     processes.push_back(process);
-                    update_maxlen(process);
+                    update_maxlen(process, f);
                 }
             }
         }
     }
 }
 
-void output(vector<Process> processes, Filter f) {
+void output(vector<Process> processes, Filter &f) {
     for (int i = 0; i < columns.size(); i++) {
         cout << setw(maxlen[columns[i]] + 2) << left << columns[i];
     }
@@ -375,6 +377,6 @@ int main(int argc, char *argv[]) {
     Filter f(argc, argv);
     init_maxlen();
     vector<Process> processes;
-    iterate_proc("/proc", processes);
+    iterate_proc("/proc", processes, f);
     output(processes, f);
 }
