@@ -223,7 +223,7 @@ File get_special_file(string file_path, string fd, int &err) {
     return file;
 }
 
-vector<File> get_maps(string map_path, err) {
+vector<File> get_maps(string map_path, int &err) {
     err = 0;
     ifstream file(map_path);
     vector<File> map_files;
