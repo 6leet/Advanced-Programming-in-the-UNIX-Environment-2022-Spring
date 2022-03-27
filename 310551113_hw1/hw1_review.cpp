@@ -273,6 +273,7 @@ int iterate_pid(string pid_path, Process &process) {
     }
 
     vector<File> fd_files = iterate_fd(pid_path + "/fd", err);
+    process.files.insert(process.files.end(), fd_files.begin(), fd_files.end());
 
     return 0;
 }
