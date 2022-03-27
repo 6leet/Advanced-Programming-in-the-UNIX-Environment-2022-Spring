@@ -72,7 +72,7 @@ struct Process {
         command = user = "";
         pid = _p;
         files.clear();
-        inode_pool.string();
+        inode_pool.clear();
     }
 };
 
