@@ -148,6 +148,7 @@ string safe_readlink(string link_path, int &err) {
     err = 0;
     char buf[1024];
     ssize_t len;
+    cout << link_path << '\n';
     if ((len = readlink(link_path.c_str(), buf, sizeof(buf) - 1)) != -1) {
         buf[len] = '\0';
         return string(buf);
@@ -201,7 +202,7 @@ File get_special_file(string pid_path, string fd, string filename, int &err) {
     File file;
     file.fd = fd;
     cout << file.fd << ' ';
-    file.name = safe_readlink(pid_path + filename, err);
+    file.name = safe_readlink(pid_path + "/" + filename, err);
     cout << file.name << ' ';
     if (err == 1) return File();
     // else if (err == -1) {
@@ -209,10 +210,10 @@ File get_special_file(string pid_path, string fd, string filename, int &err) {
     //     file.node = "";
     // } 
     else {
-        file.type = get_from_stat(pid_path + filename, "type", true, err);
+        file.type = get_from_stat(pid_path + "/" + filename, "type", true, err);
         cout << file.type << ' ';
         if (err == 1) return File();
-        file.node = get_from_stat(pid_path + filename, "node", true, err);
+        file.node = get_from_stat(pid_path + "/" + filename, "node", true, err);
         cout << file.node << ' ';
         if (err == 1) return File();
         // cout << file.fd << ' ' << file.name << ' ' << file.type << ' ' << file.node << '\n';
