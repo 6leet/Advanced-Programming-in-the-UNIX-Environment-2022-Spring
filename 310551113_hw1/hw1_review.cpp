@@ -1,7 +1,3 @@
-// 1. mem duplicate (inode_pool)
-// 2. clear (deleted)
-// 3. [heap] / [stack] / [vdso]
-// 4. wrong mem inode
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -234,14 +230,23 @@ File get_special_file(string file_path, string fd, int &err) {
     return file;
 }
 
+string clear_deleted(string filename) {
+    stringstream ss(filename);
+    string buf;
+    while (ss >> buf) {
+        return buf;
+    }
+    return "";
+}
+
 vector<File> get_maps(string map_path, int &err) {
     err = 0;
     ifstream file(map_path);
-    vector<File> map_files;
     if (!file) {
         err = 1;
         return vector<File>();
     } else {
+        vector<File> map_files;
         string line;
         while (getline(file, line)) {
             File map_file;
@@ -249,16 +254,27 @@ vector<File> get_maps(string map_path, int &err) {
             stringstream ss(line);
             string buf;
             int i = 0;
+            bool is_file = true, is_deleted = false;
             while (ss >> buf) {
-                if (i == 5) {
-                    map_file.name = buf;
+                if (i == 4 && buf == "0") {
+                    is_file = false;
                     break;
+                } else if (i == 5) {
+                    map_file.name = buf;
+                    // break;
+                } else if (i == 6 && buf == "(deleted)") {
+                    is_deleted = true;
                 }
                 i++;
             }
-            map_file.type = get_from_stat(map_file.name, "type", false, err);
-            if (map_file.type == "unknown") continue; // [heap] / [stack] / [vdso]
-            if (err == 1) return vector<File>();
+            if (!is_file) continue;
+
+            if (is_deleted) {
+                map_file.type = "DEL";
+            } else {
+                map_file.type = get_from_stat(map_file.name, "type", false, err);
+                if (err == 1) return vector<File>();
+            } 
 
             map_file.node = get_from_stat(map_file.name, "node", true, err);
             if (err == 1) return vector<File>();
@@ -291,7 +307,7 @@ vector<File> iterate_fd(string fd_path, int &err) {
                 if (err == 1) return vector<File>();
                 fd_file.node = get_from_stat(fd_path + "/" + link, "node", true, err);
                 if (err == 1) return vector<File>();
-                fd_file.name = safe_readlink(fd_path + "/" + link, err);
+                fd_file.name = clear_deleted(safe_readlink(fd_path + "/" + link, err));
                 if (err == 1) return vector<File>();
                 fd_files.push_back(fd_file);
             }
@@ -334,7 +350,7 @@ int iterate_pid(string pid_path, Process &process) {
 void iterate_proc(string proc_path, vector<Process> &processes, Filter &f) {
     DIR *dp = opendir(proc_path.c_str());
     if (dp == NULL) {
-        cerr << "can't open /proc.\n";
+        // cerr << "can't open /proc.\n";
         exit(1);
     } else {
         struct dirent *dir;
