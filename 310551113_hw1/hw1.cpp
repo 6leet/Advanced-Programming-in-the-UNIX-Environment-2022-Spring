@@ -1,138 +1,76 @@
-//  todo: 
-//      1. order: cwd, txt, rtd, mem ...
-//      2. when to kill whole pid
-//      3. which to take, symlink or linked file?
 #include <iostream>
-#include <string>
-#include <regex>
-#include <filesystem>
-#include <vector>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <pwd.h>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <string>
+#include <regex>
+#include <map>
 #include <set>
-#include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 using namespace std;
 
+map<string, int> maxlen;
+vector<string> columns{"COMMAND", "PID", "USER", "FD", "TYPE", "NODE", "NAME"};
+set<string> inode_pool;
+
 struct Filter {
-    regex command;
-    regex filename;
-    regex type;
-    Filter() {
+    regex command, filename, type;
+    Filter(int argc, char *argv[]) {
         command = regex(".*");
         filename = regex(".*");
         type = regex(".*");
+        if (argc > 1 && argc % 2 == 0) {
+            exit(1);
+        }
+        for (int i = 1; i < argc; i++) {
+            string arg = string(argv[i]);
+            if (arg[0] == '-') {
+                if (arg.substr(1, arg.size() - 1) == "c") {
+                    command = regex(argv[++i]);
+                } else if (arg.substr(1, arg.size() - 1) == "f") {
+                    filename = regex(argv[++i]);
+                } else if (arg.substr(1, arg.size() - 1) == "t") {
+                    type = regex(argv[++i]);
+                } else {
+                    exit(1);
+                }
+            } else {
+                exit(1);
+            }
+        }
     }
-    bool process(string _command) {
-        return regex_search(_command, command);
-    }
-    bool file(string _filename, string _type) {
-        return regex_search(_filename, filename) && regex_match(_type, type);
-    }
-};
-
-Filter f;
-
-struct MaxLength {
-    int command;
-    int pid;
-    int user;
-    int fd;
-    int type;
-    int node;
-    int name;
-    MaxLength() {
-        command = 7;
-        pid = 3;
-        user = 4;
-        fd = 2;
-        type = 4;
-        node = 4;
-        name = 4;
+    bool filt(string _c, string _f, string _t) {
+        return regex_search(_c, command) && regex_search(_f, filename) && regex_match(_t, type);
     }
 };
-
-MaxLength maxlen;
 
 struct File {
-    string fd;
-    string type;
-    string node;
-    string name;
+    string fd, type, node, name;
     File() {
-        fd = "";
-        type = "";
-        node = "";
-        name = "";
+        fd = type = node = name = "";
     }
 };
 
 struct Process {
-    string command;
-    int pid;
-    string user;
+    string command, pid, user;
     vector<File> files;
     Process() {
-        command = "";
-        pid = -1;
-        user = "";
+        command = pid = user = "";
         files.clear();
     }
-    Process(int _pid) {
-        command = "";
-        pid = _pid;
-        user = "";
+    Process(string _p) {
+        command = user = "";
+        pid = _p;
         files.clear();
-    }
-    void show() {
-        for (int i = 0; i < files.size(); i++) {
-            cout << setw(maxlen.command + 2) << left << command 
-                << setw(maxlen.pid + 2) << left << pid 
-                << setw(maxlen.user + 2) << left << user 
-                << setw(maxlen.fd + 2) << left << files[i].fd
-                << setw(maxlen.type + 2) << left << files[i].type
-                << setw(maxlen.node + 2) << left << files[i].node
-                << setw(maxlen.name + 2) << left << files[i].name
-                << '\n';
-        }
     }
 };
 
-set<string> inodePool;
-
-void updateMax(Process &proc) {
-    maxlen.command = max(maxlen.command, int(proc.command.size()));
-    maxlen.pid = max(maxlen.pid, int(to_string(proc.pid).size()));
-    maxlen.user = max(maxlen.user, int(proc.user.size()));
-
-    for (int i = 0; i < proc.files.size(); i++) {
-        maxlen.fd = max(maxlen.fd, int(proc.files[i].fd.size()));
-        maxlen.type = max(maxlen.type, int(proc.files[i].type.size()));
-        maxlen.node = max(maxlen.node, int(proc.files[i].node.size()));
-        maxlen.name = max(maxlen.name, int(proc.files[i].name.size()));
-    }
-}
-
-Filter setFilter(int argc, char *argv[]) {
-    Filter f;
-    for (int i = 0; i < argc; i++) {
-        if (string(argv[i]) == "-c") {
-            f.command = regex(argv[++i]);
-        } else if (string(argv[i]) == "-f") {
-            f.filename = regex(argv[++i]);
-        } else if (string(argv[i]) == "-t") {
-            f.type = regex(argv[++i]);
-        }
-    }
-    return f;
-}
-
-bool isNumber(string s) {
+bool is_number(string s) {
     for (int i = 0; i < s.size(); i++) {
         if (!isdigit(s[i])) {
             return false;
@@ -141,284 +79,320 @@ bool isNumber(string s) {
     return true;
 }
 
-string getCommand(string procEntryA) { // "proc/[pid]/cmdline" & split by '\0'
-    ifstream file(procEntryA);
-    string line;
-    getline(file, line);
-    stringstream ss(line);
-    string command;
-    while (getline(ss, command, '\0')) {
-        break;
+void init_maxlen() {
+    for (int i = 0; i < columns.size(); i++) {
+        maxlen[columns[i]] = columns[i].size();
     }
-    return command;
 }
 
-string processCommand(string command) {
-    int slash = command.find('/');
-    while (slash != -1) {
-        command = command.substr(slash + 1, command.size() - slash - 1);
-        slash = command.find('/');
-    }
-    return command;
-}
-
-uid_t getProcUid(string procEntryA) { // "proc/[pid]/status"
-    ifstream file(procEntryA);
-    string line;
-    while (getline(file, line)) {
-        if (line.substr(0, 3) == "Uid") {
-            stringstream ss(line);
-            string buf;
-            while (ss >> buf) {
-                if (isNumber(buf)) {
-                    return stoi(buf);
-                }
+void update_maxlen(Process &process, Filter &f) {
+    for (int i = 0; i < process.files.size(); i++) {
+        File file = process.files[i];
+        vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
+        if (f.filt(process.command, file.name, file.type)) {
+            for (int j = 0; j < columns.size(); j++) {
+                maxlen[columns[j]] = max(maxlen[columns[j]], int(cols[j].size()));
             }
-            break;
         }
     }
-    return -1;
 }
 
-string getProcUser(string procEntryA) {
-    uid_t uid = getProcUid(procEntryA);
-    struct passwd *pwd;
-    pwd = getpwuid(uid);
-    return pwd->pw_name;
+string get_command(string pid_path, int &err) {
+    err = 0;
+    ifstream file(pid_path + "/comm");
+    if (!file) {
+        err = 1;
+        return "";
+    } else {
+        string command;
+        getline(file, command);
+        file.close();
+        return command;
+    }
 }
 
-string getMode(string filename) {
-    // int fd = open(filename.c_str(), O_RDONLY);
-    // if (fd < 0) {
-    //     cerr << "open\n";
-    //     return "x";
-    // }
-    struct stat buf;
-    if (lstat(filename.c_str(), &buf) < 0) {
-        // cerr << "fstat\n";
-        return "x";
-    }
-    // close(fd);
-    string mode = "";
-    if (buf.st_mode & S_IRUSR) {
-        mode = "r";
-    }
-    if (buf.st_mode & S_IWUSR) {
-        if (mode == "r" ) {
-            mode = "u";
-        } else {
-            mode = "w";
-        }
-    }
-    return mode;
-}
-
-int getInode(string filename) {
-    int fd = open(filename.c_str(), O_RDONLY);
-    if (fd < 0) {
-        // cerr << "open\n";
+uid_t get_uid(string pid_path, int &err) {
+    err = 0;
+    ifstream file(pid_path + "/status");
+    if (!file) {
+        err = 1;
         return -1;
-    }
-    struct stat buf;
-    if (fstat(fd, &buf) < 0) {
-        // cerr << "fstat\n";
-        return -1;
-    }
-    close(fd);
-    return buf.st_ino;
-}
-
-string extractInode(string filename) {
-    int s = filename.find('[') + 1, t = filename.find(']') - 1;
-    return filename.substr(s, t - s + 1);
-}
-
-void safeReadSymlink(filesystem::path filePath, string type, File &file) {
-    try {
-        file.type = type;
-        file.name = filesystem::read_symlink(filePath).string();
-        string filePathA = filesystem::absolute(filePath).string();
-        int del = file.name.find("(deleted)");
-        if (del) {
-            file.name = file.name.substr(0, del);
-        }
-        if (type == "FIFO" || type == "SOCK") {
-            file.node = to_string(getInode(filePathA));
-            if (file.node == "-1") {
-                file.node = extractInode(file.name);
-            }
-        } else {
-            file.node = to_string(getInode(file.name));
-            inodePool.insert(file.node);
-        }
-    } catch (exception &e) {
-        file.type = "unknown";
-        file.name = filesystem::absolute(filePath).string() + " (Permission denied)";
-    }
-}
-
-void getMappedFiles(string procEntryA, Process &proc) {
-    ifstream file(procEntryA);
-    string line;
-    while (getline(file, line)) {
-        File file;
-        file.fd = "mem";
-        file.type = "REG";
-        stringstream ss(line);
-        string buf;
-        int i = 0;
-        while (ss >> buf) {
-            if (i % 7 == 4) { // inode
-                if (inodePool.find(buf) != inodePool.end() || buf == "0") {
-                    break;
-                } else {
-                    inodePool.insert(buf);
-                    file.node = buf;
-                }
-            } else if (i % 7 == 5) { // filename
-                file.name = buf;
-            } else if (i % 7 == 6) { // deleted or not
-                if (buf.find("deleted") != -1) {
-                    file.fd = "DEL";
-                }
-            }
-            i++;
-        }
-        if (file.node != "") {
-            if (f.file(file.name, file.type)) {
-                proc.files.push_back(file);
-            }
-        }
-    }
-}
-
-void iterateFd(filesystem::path fdPath, Process &proc) {
-    for (auto const& entry : filesystem::directory_iterator{fdPath}) {
-        File file;
-        string filePathA = filesystem::absolute(entry.path()).string();
-        file.fd = filesystem::absolute(entry.path()).filename();
-        file.name = filesystem::read_symlink(entry.path()).string();
-        if (entry.is_directory()) {
-            file.type = "DIR";
-            safeReadSymlink(entry.path(), "DIR", file);
-        } else if (entry.is_regular_file()) {
-            file.type = "REG";
-            safeReadSymlink(entry.path(), "REG", file);
-        } else if (entry.is_character_file()) {
-            file.type = "CHR";
-            safeReadSymlink(entry.path(), "CHR", file);
-        } else if (entry.is_fifo()) {
-            file.type = "FIFO";
-            safeReadSymlink(entry.path(), "FIFO", file);
-        } else if (entry.is_socket()) {
-            file.type = "SOCK";
-            safeReadSymlink(entry.path(), "SOCK", file);
-        } else if (entry.is_other()) {
-            file.type = "unknown";
-            safeReadSymlink(entry.path(), "unknown", file);
-        }
-        file.fd += getMode(filePathA);
-        if (f.file(file.name, file.type)) {
-            proc.files.push_back(file);
-        }
-    }
-}
-
-void iterateProcess(filesystem::path procPath, Process &proc) {
-    for (auto const& entry : filesystem::directory_iterator{procPath}) {
-        string procEntryA = filesystem::absolute(entry.path()).string();
-        string procEntryF = filesystem::absolute(entry.path()).filename();
-        if (procEntryF == "cmdline") {
-            // COMMAND
-            proc.command = getCommand(procEntryA);
-            proc.command = processCommand(proc.command);
-        } else if (procEntryF == "status") { 
-            // USER
-            proc.user = getProcUser(procEntryA);
-        } else if (procEntryF == "cwd") { 
-            // FD: current working directory
-            File file;
-            file.fd = "cwd";
-            safeReadSymlink(entry.path(), "DIR", file);
-            if (f.file(file.name, file.type)) {
-                proc.files.push_back(file);
-            }
-        } else if (procEntryF == "exe") {             
-            // FD: txt
-            File file;
-            file.fd = "txt";
-            safeReadSymlink(entry.path(), "REG", file);
-            if (f.file(file.name, file.type)) {
-                proc.files.push_back(file);
-            }
-        } else if (procEntryF == "root") {
-            // FD: rtd
-            File file;
-            file.fd = "rtd";
-            safeReadSymlink(entry.path(), "DIR", file);
-            if (f.file(file.name, file.type)) {
-                proc.files.push_back(file);
-            }
-        } else if (procEntryF == "maps") {
-            // FD: mem
-            getMappedFiles(procEntryA, proc);
-        } else if (procEntryF == "fd") {
-            // Fd: [0-9][rwu]
-            try {
-                iterateFd(entry.path(), proc);
-            } catch (exception &e) {
-                File file;
-                file.fd = "NOFD";
-                file.name = filesystem::absolute(entry.path()).string() + " (permission denied)";
-                if (f.file(file.name, file.type)) {
-                    proc.files.push_back(file);
-                }
-            }
-        }
-    }
-}
-
-void iterateBase(string path, vector<Process> &processes) {
-    filesystem::path basePath{path};
-    for (auto const& entry : filesystem::directory_iterator{basePath}) {
-        try {
-            if (entry.is_directory() && !entry.is_symlink()) {
-            string procPathR = filesystem::relative(entry.path(), basePath).string();
-            string procPathA = filesystem::absolute(entry.path()).string();
-                if (isNumber(procPathR)) {
-                    inodePool.clear();
-                    Process proc(stoi(procPathR));
-                    iterateProcess(entry.path(), proc);
-                    if (f.process(proc.command)) {
-                        updateMax(proc);
-                        processes.push_back(proc);
+    } else {
+        string line;
+        while (getline(file, line)) {
+            if (line.substr(0, 3) == "Uid") {
+                stringstream ss(line);
+                string buf;
+                while (ss >> buf) {
+                    if (is_number(buf)) {
+                        return stoi(buf);
                     }
                 }
+                break;
             }
-        } catch (exception &e) {
-            continue;
+        }
+        err = 1;
+        return -1;
+    }
+}
+
+string get_user(string pid_path, int &err) {
+    err = 0;
+    uid_t uid = get_uid(pid_path, err);
+    if (err == 1) return "";
+    struct passwd *pwd = getpwuid(uid);
+    if (pwd == NULL) {
+        err = 1;
+        return "";
+    } else {
+        return pwd->pw_name;
+    }
+}
+
+string safe_readlink(string link_path, int &err) {
+    err = 0;
+    char buf[1024];
+    ssize_t len;
+    if ((len = readlink(link_path.c_str(), buf, sizeof(buf) - 1)) != -1) {
+        buf[len] = '\0';
+        return string(buf);
+    } else {
+        if (errno == EACCES) {
+            err = -1; // permission denied
+            return link_path + " (Permission denied)";
+        } else {
+            err = 1;
+            return "";
         }
     }
 }
 
-void output(vector<Process> processes) {
-    cout << setw(maxlen.command + 2) << left << "COMMAND" 
-        << setw(maxlen.pid + 2) << left << "PID" 
-        << setw(maxlen.user + 2) << left << "USER" 
-        << setw(maxlen.fd + 2) << left << "FD"
-        << setw(maxlen.type + 2) << left << "TYPE"
-        << setw(maxlen.node + 2) << left << "NODE"
-        << setw(maxlen.name + 2) << left << "NAME"
-        << '\n';
+string get_from_stat(string file_path, string target, bool through_link, int &err) {
+    struct stat buf;
+    int _stat;
+    if (through_link) { // the file linked by softlink
+        _stat = stat(file_path.c_str(), &buf);
+    } else { // softlink itself
+        _stat = lstat(file_path.c_str(), &buf);
+    }
+    if (_stat == -1) { // error
+        if (errno = EACCES) {
+            err = -1; // permission denied
+            if (target == "type") return "unknown";
+            else return "";
+        } else {
+            err = 1;
+            return "";
+        }
+    }
+    if (target == "type") {
+        switch (buf.st_mode & S_IFMT) {
+            case S_IFCHR:  return "CHR";
+            case S_IFDIR:  return "DIR";
+            case S_IFIFO:  return "FIFO";
+            case S_IFREG:  return "REG";
+            case S_IFSOCK: return "SOCK";
+            default:       return "unknown";
+        }
+    } else if (target == "node") {
+        return to_string(buf.st_ino);
+    } else if (target == "mode") {
+        string mode = "";
+        if (buf.st_mode & S_IRUSR) {
+            mode = "r";
+        }
+        if (buf.st_mode & S_IWUSR) {
+            if (mode == "r" ) {
+                mode = "u";
+            } else {
+                mode = "w";
+            }
+        }
+        return mode;
+    } else {
+        return "";
+    }
+}
+
+string clear_deleted(string filename) {
+    stringstream ss(filename);
+    string buf;
+    while (ss >> buf) {
+        return buf;
+    }
+    return "";
+}
+
+File get_special_file(string file_path, string fd, int &err) {
+    err = 0;
+    File file;
+    file.fd = fd;
+    file.name = clear_deleted(safe_readlink(file_path, err));
+    if (err == 1) return File();
+    file.type = get_from_stat(file_path, "type", true, err);
+    if (err == 1) return File();
+    file.node = get_from_stat(file_path, "node", true, err);
+    if (err == 1) return File();
+    if (fd == "txt") {
+        inode_pool.insert(file.node);
+    }
+    return file;
+}
+
+vector<File> get_maps(string map_path, int &err) {
+    err = 0;
+    ifstream file(map_path);
+    if (!file) {
+        err = 1;
+        return vector<File>();
+    } else {
+        vector<File> map_files;
+        string line;
+        while (getline(file, line)) {
+            File map_file;
+            map_file.fd = "mem";
+            stringstream ss(line);
+            string buf;
+            int i = 0;
+            bool is_file = false, is_deleted = false;
+            while (ss >> buf) {
+                if (i == 4 && buf != "0") {
+                    is_file = true;
+                    map_file.node = buf;
+                } else if (i == 5) {
+                    map_file.name = buf;
+                    // break;
+                } else if (i == 6 && buf == "(deleted)") {
+                    is_deleted = true;
+                }
+                i++;
+            }
+            if (!is_file) continue;
+
+            if (is_deleted) {
+                map_file.type = "DEL";
+            } else {
+                map_file.type = get_from_stat(map_file.name, "type", false, err);
+                if (err == 1) return vector<File>();
+            } 
+            
+            // map_file.node = get_from_stat(map_file.name, "node", true, err);
+            // if (err == 1) return vector<File>();
+
+            if (inode_pool.find(map_file.node) == inode_pool.end()) {
+                map_files.push_back(map_file);
+                inode_pool.insert(map_file.node);
+            }
+        }
+        return map_files;
+    }
+}
+
+vector<File> iterate_fd(string fd_path, int &err) {
+    err = 0;
+    DIR *dp = opendir(fd_path.c_str());
+    vector<File> fd_files;
+    if (dp == NULL) {
+        return vector<File>();
+    } else {
+        struct dirent *dir;
+        while ((dir = readdir(dp)) != NULL) {
+            File fd_file;
+            string link(dir->d_name);
+            if (is_number(link)) {
+                string mode = get_from_stat(fd_path + "/" + link, "mode", false, err);
+                if (err == 1) return vector<File>();
+                fd_file.fd = link + mode;
+                fd_file.type = get_from_stat(fd_path + "/" + link, "type", true, err);
+                if (err == 1) return vector<File>();
+                fd_file.node = get_from_stat(fd_path + "/" + link, "node", true, err);
+                if (err == 1) return vector<File>();
+                fd_file.name = clear_deleted(safe_readlink(fd_path + "/" + link, err));
+                if (err == 1) return vector<File>();
+                fd_files.push_back(fd_file);
+            }
+        }
+        return fd_files;
+    }
+}
+
+int iterate_pid(string pid_path, Process &process) {
+    inode_pool.clear();
+
+    int err;
+
+    process.command = get_command(pid_path, err);
+    if (err == 1) return 1;
+
+    process.user = get_user(pid_path, err);
+    if (err == 1) return 1;
+
+    // cwd, rtd, txt
+    vector<string> fds{"cwd", "rtd", "txt"};
+    vector<string> filenames{"cwd", "root", "exe"};
+    for (int i = 0; i < fds.size(); i++) {
+        process.files.push_back(get_special_file(pid_path + "/" + filenames[i], fds[i], err));
+        if (err == 1) return err;
+    }
+
+    // map
+    vector<File> map_files = get_maps(pid_path + "/maps", err);
+    if (err == 1) return err;
+    process.files.insert(process.files.end(), map_files.begin(), map_files.end());
+
+    // fd
+    vector<File> fd_files = iterate_fd(pid_path + "/fd", err);
+    process.files.insert(process.files.end(), fd_files.begin(), fd_files.end());
+
+    return 0;
+}
+
+void iterate_proc(string proc_path, vector<Process> &processes, Filter &f) {
+    DIR *dp = opendir(proc_path.c_str());
+    if (dp == NULL) {
+        // cerr << "can't open /proc.\n";
+        exit(1);
+    } else {
+        struct dirent *dir;
+        while ((dir = readdir(dp)) != NULL) {
+            string pid(dir->d_name);
+            if (is_number(pid)) {
+                Process process(pid);
+                int err = iterate_pid(proc_path + "/" + pid, process);
+                if (err != 1) {
+                    processes.push_back(process);
+                    update_maxlen(process, f);
+                }
+            }
+        }
+    }
+}
+
+void output(vector<Process> processes, Filter &f) {
+    for (int i = 0; i < columns.size(); i++) {
+        cout << setw(maxlen[columns[i]] + 2) << left << columns[i];
+    }
+    cout << '\n';
 
     for (int i = 0; i < processes.size(); i++) {
-        processes[i].show();
-    } 
+        Process process = processes[i];
+        for (int j = 0; j < process.files.size(); j++) {
+            File file = process.files[j];
+            if (f.filt(process.command, file.name, file.type)) {
+                vector<string> cols{process.command, process.pid, process.user, file.fd, file.type, file.node, file.name};
+                for (int k = 0; k < cols.size(); k++) {
+                    cout << setw(maxlen[columns[k]] + 2) << left << cols[k];
+                }
+                cout << '\n';
+            }
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
-    f = setFilter(argc, argv);
+    Filter f(argc, argv);
+    init_maxlen();
     vector<Process> processes;
-    iterateBase("/proc", processes);
-    output(processes);
+    iterate_proc("/proc", processes, f);
+    output(processes, f);
 }
