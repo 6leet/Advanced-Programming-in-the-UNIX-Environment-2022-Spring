@@ -6,18 +6,17 @@
 #define args(...) __VA_ARGS__
 #define func(return_type, func_name, func_arg, para) \
     return_type func_name(func_arg) { \
-        return_type ret = call_from_libc(func_name, #func_name, para); \
         cout << "call " << #func_name << '\n'; \
+        return_type ret = call_from_libc(func_name, #func_name, para); \
         return ret; \
     } \
 
 using namespace std;
 
 template<typename Func, typename... Args>
-auto call_from_libc(Func, string func_name, Args... args) {
-    cout << "func_name: " << func_name << '\n';
+auto call_from_libc(Func _, string func_name, Args... args) {
     void *handle = dlopen("libc.so.6", RTLD_LAZY);
-    Func libc_func = (Func) dlsym(handle, func_name.c_str());
+    static Func libc_func = (Func) dlsym(handle, func_name.c_str());
     return libc_func(args...);
 }
 
