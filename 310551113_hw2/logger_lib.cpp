@@ -6,7 +6,6 @@
 #define args(...) __VA_ARGS__
 #define func(return_type, func_name, func_arg, para) \
     return_type func_name(func_arg) { \
-        cout << "call " << #func_name << '\n'; \
         return_type ret = call_from_libc(func_name, #func_name, para); \
         return ret; \
     } \
