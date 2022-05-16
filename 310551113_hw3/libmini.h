@@ -9,6 +9,10 @@ typedef int uid_t;
 typedef int gid_t;
 typedef int pid_t;
 
+//
+
+typedef void (*sighandler_t)(int);
+
 extern long errno;
 
 #define	NULL		((void*) 0)
@@ -146,6 +150,16 @@ extern long errno;
 #define	SIG_UNBLOCK   1		 /* Unblock signals.  */
 #define	SIG_SETMASK   2		 /* Set the set of blocked signals.  */
 
+// 
+
+#define _NSIG		64
+#define _NSIG_BPW	64
+#define _NSIG_WORDS	(_NSIG / _NSIG_BPW)
+
+typedef struct {
+	unsigned long sig[_NSIG_WORDS];
+} sigset_t;
+
 struct timespec {
 	long	tv_sec;		/* seconds */
 	long	tv_nsec;	/* nanoseconds */
@@ -196,6 +210,12 @@ long sys_setgid(gid_t gid);
 long sys_geteuid();
 long sys_getegid();
 
+//
+// long sys_rt_sigaction(int, const struct sigaction __user *, struct sigaction __user *, size_t);
+long sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset, size_t sigsetsize);
+long sys_rt_sigpending(sigset_t *set, size_t sigsetsize);
+long sys_alarm(unsigned int seconds);
+
 /* wrappers */
 ssize_t	read(int fd, char *buf, size_t count);
 ssize_t	write(int fd, const void *buf, size_t count);
@@ -235,5 +255,18 @@ void bzero(void *s, size_t size);
 size_t strlen(const char *s);
 void perror(const char *prefix);
 unsigned int sleep(unsigned int s);
+
+//
+
+unsigned int alarm(unsigned int seconds);
+// int sigemptyset(sigset_t *s);
+void sigemptyset(sigset_t *set);
+void sigfillset(sigset_t *set);
+// int sigaddset(sigset_t *s, int n);
+void sigaddset(sigset_t *set, int _sig);
+void sigdelset(sigset_t *set, int _sig);
+int sigprocmask(int how, const sigset_t *mask, sigset_t *old);
+int sigpending (sigset_t *set);
+int sigismember(sigset_t *set, int _sig);
 
 #endif	/* __LIBMINI_H__ */

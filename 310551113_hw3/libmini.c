@@ -178,6 +178,88 @@ size_t strlen(const char *s) {
 	return count;
 }
 
+unsigned int alarm(unsigned int seconds) {
+    long ret = sys_alarm(seconds);
+    WRAPPER_RETval(unsigned int);
+}
+
+// int sigemptyset(sigset_t *s) {
+// 	unsigned int i;
+
+// 	for (i = 0; i < _NSIG_WORDS; ++i)
+// 		s->sig[i] = 0;
+
+// 	return 0;
+// }
+
+void sigemptyset(sigset_t *set) {
+    unsigned int i;
+	switch (_NSIG_WORDS) {
+	default:
+		for (i = 0; i < _NSIG_WORDS; ++i)
+		    set->sig[i] = 0;
+		break;
+	case 2: set->sig[1] = 0;
+	case 1:	set->sig[0] = 0;
+		break;
+	}
+}
+
+void sigfillset(sigset_t *set) {
+    unsigned int i;
+	switch (_NSIG_WORDS) {
+	default:
+		for (i = 0; i < _NSIG_WORDS; ++i)
+		    set->sig[i] = -1;
+		break;
+	case 2: set->sig[1] = -1;
+	case 1:	set->sig[0] = -1;
+		break;
+	}
+}
+
+// int sigaddset(sigset_t *s, int n) {
+// 	if (n < 1 || n > _NSIG)
+// 		return -EINVAL;
+
+// 	s->sig[(n - 1) / _NSIG_BPW] |= 1UL << (n - 1) % _NSIG_BPW;
+// 	return 0;
+// }
+
+void sigaddset(sigset_t *set, int _sig) {
+	unsigned long sig = _sig - 1;
+	if (_NSIG_WORDS == 1)
+		set->sig[0] |= 1UL << sig;
+	else
+		set->sig[sig / _NSIG_BPW] |= 1UL << (sig % _NSIG_BPW);
+}
+
+void sigdelset(sigset_t *set, int _sig) {
+	unsigned long sig = _sig - 1;
+	if (_NSIG_WORDS == 1)
+		set->sig[0] &= ~(1UL << sig);
+	else
+		set->sig[sig / _NSIG_BPW] &= ~(1UL << (sig % _NSIG_BPW));
+}
+
+int sigprocmask(int how, const sigset_t *mask, sigset_t *old) {
+	long ret = sys_rt_sigprocmask(how, mask, old, sizeof(*mask));
+    WRAPPER_RETval(int);
+}
+
+int sigpending (sigset_t *set) {
+  return sys_rt_sigpending(set, _NSIG / 8);
+}
+
+int sigismember(sigset_t *set, int _sig) {
+	unsigned long sig = _sig - 1;
+	if (_NSIG_WORDS == 1)
+		return 1 & (set->sig[0] >> sig);
+	else
+		return 1 & (set->sig[sig / _NSIG_BPW] >> (sig % _NSIG_BPW));
+}
+
+
 #define	PERRMSG_MIN	0
 #define	PERRMSG_MAX	34
 

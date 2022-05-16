@@ -51,6 +51,15 @@ extern	errno
 	gensys 107, geteuid
 	gensys 108, getegid
 
+    ;
+
+    gensys 13, 	rt_sigaction
+    gensys 282, signalfd
+    gensys 289, signalfd4
+    gensys 14, rt_sigprocmask
+    gensys 127, rt_sigpending
+    gensys 37, alarm
+
 	global open:function
 open:
 	call	sys_open
