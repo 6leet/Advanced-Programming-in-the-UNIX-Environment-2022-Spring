@@ -212,7 +212,7 @@ long sys_getegid();
 
 //
 // long sys_rt_sigaction(int, const struct sigaction __user *, struct sigaction __user *, size_t);
-long sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset, size_t sigsetsize);
+long sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oset, size_t sigsetsize);
 long sys_rt_sigpending(sigset_t *set, size_t sigsetsize);
 long sys_alarm(unsigned int seconds);
 
