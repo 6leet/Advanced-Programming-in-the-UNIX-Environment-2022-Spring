@@ -12,6 +12,7 @@ typedef int pid_t;
 //
 
 typedef void (*sighandler_t)(int);
+typedef void (*sigrestore_t)(void);
 
 extern long errno;
 
@@ -146,9 +147,16 @@ extern long errno;
 				    its handler is being executed.  */
 # define SA_RESETHAND 0x80000000 /* Reset to SIG_DFL on entry to handler.  */
 
+#define SA_RESTORER	0x04000000
+
 #define	SIG_BLOCK     0		 /* Block signals.  */
 #define	SIG_UNBLOCK   1		 /* Unblock signals.  */
 #define	SIG_SETMASK   2		 /* Set the set of blocked signals.  */
+
+#define SIG_DFL	((sighandler_t)0)	/* default signal handling */
+#define SIG_IGN	((sighandler_t)1)	/* ignore signal */
+#define SIG_ERR	((sighandler_t)-1)	/* error return from signal */
+
 
 // 
 
@@ -173,6 +181,31 @@ struct timeval {
 struct timezone {
 	int	tz_minuteswest;	/* minutes west of Greenwich */
 	int	tz_dsttime;	/* type of DST correction */
+};
+
+//
+
+// struct sigaction {
+// 	void (*sa_handler)(int);
+// 	// void (*sa_sigaction)(int, siginfo_t *, void *);
+// 	sigset_t sa_mask;
+// 	unsigned long sa_flags;
+// 	void (*sa_restorer)(void);
+// };
+
+struct sigaction {
+	sighandler_t sa_handler;
+	unsigned long sa_flags;
+	// void (*sa_restorer) (void);
+	sigrestore_t sa_restorer;
+	sigset_t sa_mask;
+};
+
+struct k_sigaction {
+	struct sigaction sa;
+#ifdef __ARCH_HAS_KA_RESTORER
+	sigrestore_t ka_restorer;
+#endif
 };
 
 /* system calls */
@@ -211,10 +244,12 @@ long sys_geteuid();
 long sys_getegid();
 
 //
-// long sys_rt_sigaction(int, const struct sigaction __user *, struct sigaction __user *, size_t);
-long sys_rt_sigprocmask(int how, sigset_t *set, sigset_t *oset, size_t sigsetsize);
+long sys_rt_sigaction(int, const struct sigaction *, struct sigaction *, size_t);
+long sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oset, size_t sigsetsize);
 long sys_rt_sigpending(sigset_t *set, size_t sigsetsize);
 long sys_alarm(unsigned int seconds);
+
+long __myrt();
 
 /* wrappers */
 ssize_t	read(int fd, char *buf, size_t count);
@@ -268,5 +303,7 @@ void sigdelset(sigset_t *set, int _sig);
 int sigprocmask(int how, const sigset_t *mask, sigset_t *old);
 int sigpending (sigset_t *set);
 int sigismember(sigset_t *set, int _sig);
+long sigaction(int signo, struct sigaction *act, struct sigaction *oact);
+sighandler_t signal(int signo, sighandler_t handler);
 
 #endif	/* __LIBMINI_H__ */
