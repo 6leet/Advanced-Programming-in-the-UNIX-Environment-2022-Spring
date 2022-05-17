@@ -183,15 +183,6 @@ unsigned int alarm(unsigned int seconds) {
     WRAPPER_RETval(unsigned int);
 }
 
-// int sigemptyset(sigset_t *s) {
-// 	unsigned int i;
-
-// 	for (i = 0; i < _NSIG_WORDS; ++i)
-// 		s->sig[i] = 0;
-
-// 	return 0;
-// }
-
 void sigemptyset(sigset_t *set) {
     unsigned int i;
 	switch (_NSIG_WORDS) {
@@ -217,14 +208,6 @@ void sigfillset(sigset_t *set) {
 		break;
 	}
 }
-
-// int sigaddset(sigset_t *s, int n) {
-// 	if (n < 1 || n > _NSIG)
-// 		return -EINVAL;
-
-// 	s->sig[(n - 1) / _NSIG_BPW] |= 1UL << (n - 1) % _NSIG_BPW;
-// 	return 0;
-// }
 
 void sigaddset(sigset_t *set, int _sig) {
 	unsigned long sig = _sig - 1;
@@ -257,6 +240,34 @@ int sigismember(sigset_t *set, int _sig) {
 		return 1 & (set->sig[0] >> sig);
 	else
 		return 1 & (set->sig[sig / _NSIG_BPW] >> (sig % _NSIG_BPW));
+}
+
+long sigaction(int signum, struct sigaction *act, struct sigaction *oact) {
+    act->sa_flags |= SA_RESTORER;
+    act->sa_restorer = (sigrestore_t)(__myrt);
+    long ret = sys_rt_sigaction(signum, act, oact, sizeof(sigset_t));
+    WRAPPER_RETval(int);
+}
+
+sighandler_t signal(int signo, sighandler_t handler) {
+	struct sigaction act, oact;
+
+	act.sa_handler = handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	if (signo == SIGALRM) {
+#ifdef SA_INTERRUPT
+		act.sa_flags |= SA_INTERRUPT;
+#endif
+	} else {
+#ifdef SA_RESTART
+		act.sa_flags |= SA_RESTART;
+#endif
+	}
+	
+	if (sigaction(signo, &act, &oact) < 0)
+		return(SIG_ERR);
+	return(oact.sa_handler);
 }
 
 

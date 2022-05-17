@@ -108,3 +108,9 @@ sleep_failed:
 sleep_quit:
 	add	rsp, 32
 	ret
+
+	global __myrt:function
+__myrt:
+    mov     rax, 15
+    syscall
+    ret
