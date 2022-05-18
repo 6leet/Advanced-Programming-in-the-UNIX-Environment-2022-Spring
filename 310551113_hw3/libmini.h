@@ -168,6 +168,11 @@ typedef struct {
 	unsigned long sig[_NSIG_WORDS];
 } sigset_t;
 
+typedef struct jmp_buf_s {
+	long long reg[8];
+	sigset_t mask;
+} jmp_buf[1];
+
 struct timespec {
 	long	tv_sec;		/* seconds */
 	long	tv_nsec;	/* nanoseconds */
@@ -305,5 +310,7 @@ int sigpending (sigset_t *set);
 int sigismember(sigset_t *set, int _sig);
 long sigaction(int signo, struct sigaction *act, struct sigaction *oact);
 sighandler_t signal(int signo, sighandler_t handler);
+int setjmp(jmp_buf env);
+void longjmp(jmp_buf env, int val);
 
 #endif	/* __LIBMINI_H__ */

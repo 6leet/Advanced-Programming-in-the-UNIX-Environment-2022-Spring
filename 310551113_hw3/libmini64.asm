@@ -109,6 +109,57 @@ sleep_quit:
 	add	rsp, 32
 	ret
 
+	global setjmp:function
+setjmp:
+	mov [rdi], rbx
+	mov [rdi + 8], rsp
+	mov [rdi + 16], rbp
+	mov [rdi + 24], r12
+	mov [rdi + 32], r13
+	mov [rdi + 40], r14
+	mov [rdi + 48], r15
+	; return address
+	mov rax, [rsp]
+	mov [rdi + 56], rax
+	;
+	push rdi
+	mov rdi, 2 ; SIG_SETMASK
+	mov rsi, 0
+	sub rsp, 8 ; allocate sigset_t old
+	lea rdx, [rsp]
+	mov rcx, 8
+	call sys_rt_sigprocmask
+	mov rax, [rsp]
+	add rsp, 8
+	pop rdi
+	mov [rdi + 64], rax
+	mov rax, 0
+	ret
+
+	global longjmp:function
+longjmp:
+	mov rbx, [rdi]
+	mov rsp, [rdi + 8]
+	mov rbp, [rdi + 16]
+	mov r12, [rdi + 24]
+	mov r13, [rdi + 32]
+	mov r14, [rdi + 40]
+	mov r15, [rdi + 48]
+	; return address
+	pop rax
+	mov rax, [rdi + 56]
+	push rax
+	;
+	push rsi
+	lea rsi, [rdi + 64]
+	mov rdi, 2; SIG_SETMASK
+	mov rdx, 0
+	mov rcx, 8
+	call sys_rt_sigprocmask
+	pop rsi
+	mov rax, rsi
+	ret
+
 	global __myrt:function
 __myrt:
     mov     rax, 15
