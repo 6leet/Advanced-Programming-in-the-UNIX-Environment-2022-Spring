@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <iomanip>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -9,9 +10,14 @@
 #include <stdint.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/user.h>
+#include <sys/reg.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
+// ---head of utils.cpp---
+
+#define LLSIZE 8
 #define EPSIZE 8
 
 #define NOT_LOADED 0
@@ -23,6 +29,7 @@
 #define ERR_UNDEFINED -3
 #define ERR_BADWAIT -4
 #define ERR_NULL -5
+#define ERR_BADREG -6
 
 using namespace std;
 
@@ -44,11 +51,40 @@ map<string, int> status_map = {
     {"get", RUNNING},
     {"getregs", RUNNING},
     {"load", NOT_LOADED},
-    {"run", LOADED},
     {"vmmap", RUNNING},
     {"set", RUNNING},
     {"si", RUNNING},
     {"start", LOADED}
+};
+
+map<string, int> reg_offset = {
+    {"r15", R15},
+    {"r14", R14},
+    {"r13", R13},
+    {"r12", R12},
+    {"rbp", RBP},
+    {"rbx", RBX},
+    {"r11", R11},
+    {"r10", R10},
+    {"r9", R9},
+    {"r8", R8},
+    {"rax", RAX},
+    {"rcx", RCX},
+    {"rdx", RDX},
+    {"rsi", RSI},
+    {"rdi", RDI},
+    {"orig_rax", ORIG_RAX},
+    {"rip", RIP},
+    {"cs", CS},
+    {"eflags", EFLAGS},
+    {"rsp", RSP},
+    {"ss", SS},
+    {"fs_base", FS_BASE},
+    {"gs_base", GS_BASE},
+    {"ds", DS},
+    {"es", ES},
+    {"fs", FS},
+    {"gs", GS}
 };
 
 void errquit(string msg) {
@@ -101,6 +137,56 @@ bool checkstatus(string command) {
     return true;
 }
 
+string hexify(unsigned long long x) {
+    stringstream ss;
+    ss << hex << x;
+    return "0x" + ss.str();
+}
+
+unsigned long long toull(string val) {
+    if (val.size() > 2 && val[1] == 'x') {
+        return strtoull(val.c_str(), NULL, 16);
+    } else {
+        return strtoull(val.c_str(), NULL, 10);
+    }
+}
+
+// ---end of utils.cpp---
+
+// ---head of handler.hpp--
+
+string get_entrypoint();
+
+// break
+int cont();
+// delete
+// disasm
+// dump
+void quit(); // exit
+int get(string);
+// getregs
+// help
+// list
+int load(string);
+int run();
+// vmmap
+int set(string, string);
+// si
+int start();
+
+// ---head of handler.cpp---
+
+/*
+return if WIFSTOPPED ?
+int setbreak(..., int &status) { // old status
+    if (status) { // check status
+
+    }
+    ... // main stuff
+    status = new_status // transform
+}
+*/
+
 string get_entrypoint() {
     ifstream file(conf.program, ifstream::binary);
     if (!file) {
@@ -123,17 +209,6 @@ string get_entrypoint() {
     return "0x" + string(hex + sig_i);
 }
 
-/*
-return if WIFSTOPPED ?
-int setbreak(..., int &status) { // old status
-    if (status) { // check status
-
-    }
-    ... // main stuff
-    status = new_status // transform
-}
-*/
-
 int cont() {
     if (!checkstatus("cont")) return ERR_WRONGSTATUS;
 
@@ -147,28 +222,27 @@ void quit() { // exit
     exit(0);
 }
 
-int start() {
-    if (!checkstatus("start")) return ERR_WRONGSTATUS;
+int get(string reg) {
+    if (!checkstatus("get")) return ERR_WRONGSTATUS;
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        errquit("fork");
-    } else if (pid == 0) {
-        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) errquit("ptrace@child");
-        char* arg[3] = {strdup(conf.program.c_str()), NULL};
-        execvp(arg[0], arg);
-        errquit("execvp");
-    } else {
-        conf.child = pid;
-        conf.status = LOADED;
-
-        ptrace(PTRACE_SETOPTIONS, conf.child, 0, PTRACE_O_EXITKILL);
-
-        conf.status = RUNNING;
-        debug("pid " + to_string(conf.child));
-        return waitstatus();;
+    if (reg_offset.find(reg) == reg_offset.end()) {
+        return ERR_BADREG;
     }
-    return ERR_NULL;
+    unsigned long long regval;
+    regval = ptrace(PTRACE_PEEKUSER, conf.child, reg_offset[reg] * LLSIZE, 0);
+    writemsg(reg + " = " + to_string(regval) + " (" + hexify(regval) + ")");
+    return 0;
+}
+
+int load(string program) {
+    if (!checkstatus("load")) return ERR_WRONGSTATUS;
+
+    conf.program = program;
+    string entrypoint = get_entrypoint();
+    debug("program '" + conf.program + "' loaded. entry point " + entrypoint);
+
+    conf.status = LOADED;
+    return 0;
 }
 
 int run() {
@@ -184,29 +258,79 @@ int run() {
     }
 }
 
-int load(string program) {
-    if (!checkstatus("load")) return ERR_WRONGSTATUS;
+int set(string reg, string val) {
+    if (!checkstatus("set")) return ERR_WRONGSTATUS;
 
-    conf.program = program;
-    string entrypoint = get_entrypoint();
-    debug("program '" + conf.program + "' loaded. entry point " + entrypoint);
-
-    conf.status = LOADED;
+    unsigned long long regval = toull(val);
+    if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset[reg] * LLSIZE, regval) != 0) errquit("poketext");
     return 0;
 }
+
+int start() {
+    if (!checkstatus("start")) return ERR_WRONGSTATUS;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        errquit("fork");
+    } else if (pid == 0) {
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) errquit("ptrace@child");
+        char* arg[3] = {strdup(conf.program.c_str()), NULL};
+        execvp(arg[0], arg);
+        errquit("execvp");
+    } else {
+        conf.child = pid;
+
+        int ret = waitstatus();
+        ptrace(PTRACE_SETOPTIONS, conf.child, 0, PTRACE_O_EXITKILL);
+        debug("pid " + to_string(conf.child));
+
+        conf.status = RUNNING;
+        return ret;
+    }
+    return ERR_NULL;
+}
+
+// ---end of handler.cpp---
+
+// ---head of core.cpp---
 
 int middleware(vector<string> cmd) {
     if (cmd[0] == "break" || cmd[0] == "b") {
         if (cmd.size() < 2) return lackarg();
-    } else if (cmd[0] == "cont") {
+
+    } else if (cmd[0] == "cont" || cmd[0] == "c") {
         return cont();
+    } else if (cmd[0] == "delete") {
+        if (cmd.size() < 2) return lackarg();
+
+    } else if (cmd[0] == "disasm" || cmd[0] == "d") {
+        if (cmd.size() < 2) return lackarg();
+
+    } else if (cmd[0] == "dump" || cmd[0] == "x") {
+
     } else if (cmd[0] == "exit" || cmd[0] == "q") {
         quit();
+    } else if (cmd[0] == "get" || cmd[0] == "g") {
+        if (cmd.size() < 2) return lackarg();
+        return get(cmd[1]);
+    } else if (cmd[0] == "getregs") {
+        
+    } else if (cmd[0] == "help" || cmd[0] == "h") {
+
+    } else if (cmd[0] == "list" || cmd[0] == "l") {
+
     } else if (cmd[0] == "load") {
         if (cmd.size() < 2) return lackarg();
         return load(cmd[1]);
-    } else if (cmd[0] == "run") {
+    } else if (cmd[0] == "run" || cmd[0] == "r") {
         return run();
+    } else if (cmd[0] == "vmmap" || cmd[0] == "m") {
+
+    } else if (cmd[0] == "set" || cmd[0] == "s") {
+        if (cmd.size() < 3) return lackarg();
+        return set(cmd[1], cmd[2]);
+    } else if (cmd[0] == "si") {
+
     } else if (cmd[0] == "start") {
         return start();
     } else {
@@ -256,3 +380,5 @@ int main(int argc, char *argv[]) {
     arg_parser(argc, argv);
     core();
 }
+
+// ---end of core.cpp---
