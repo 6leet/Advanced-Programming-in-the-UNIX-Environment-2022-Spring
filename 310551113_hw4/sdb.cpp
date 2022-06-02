@@ -19,6 +19,7 @@
 
 #define LLSIZE 8
 #define EPSIZE 8
+#define WORD 8
 
 #define NOT_LOADED 0
 #define LOADED 1
@@ -105,13 +106,33 @@ void usage() {
     errquit("usage: ./hw4 [-s script] [program]");
 }
 
+void _help() {
+    string help_msg = string("- break {instruction-address}: add a break point\n") + 
+                    "- cont: continue execution\n" +
+                    "- delete {break-point-id}: remove a break point\n" + 
+                    "- disasm addr: disassemble instructions in a file or a memory region\n" +
+                    "- dump addr: dump memory content\n" +
+                    "- exit: terminate the debugger\n" +
+                    "- get reg: get a single value from a register\n" +
+                    "- getregs: show registers\n" +
+                    "- help: show this message\n" +
+                    "- list: list break points\n" +
+                    "- load {path/to/a/program}: load a program\n" +
+                    "- run: run the program\n" +
+                    "- vmmap: show memory layout\n" +
+                    "- set reg val: get a single value to a register\n" +
+                    "- si: step into instruction\n" +
+                    "- start: start the program and stop at the first instruction";
+    writemsg(help_msg);
+}
+
 int lackarg() {
     debug("Not enough input arguments");
     return ERR_LACKARG;
 }
 
 int undefined(string command) {
-    writemsg("Undefined command: \"" + command + "\".  Try \"help\".");
+    debug("Undefined command: \"" + command + "\".  Try \"help\".");
     return ERR_UNDEFINED;
 }
 
@@ -151,6 +172,10 @@ unsigned long long toull(string val) {
     }
 }
 
+void padzero(string &s, int n) {
+    s.insert(s.begin(), 16 - s.length(), '0');
+}
+
 // ---end of utils.cpp---
 
 // ---head of handler.hpp--
@@ -161,17 +186,17 @@ string get_entrypoint();
 int cont();
 // delete
 // disasm
-// dump
+int dump(string, int);
 void quit(); // exit
 int get(string);
-// getregs
-// help
+int getregs();
+int help();
 // list
 int load(string);
 int run();
-// vmmap
+int vmmap();
 int set(string, string);
-// si
+int si();
 int start();
 
 // ---head of handler.cpp---
@@ -218,6 +243,39 @@ int cont() {
     return waitstatus();
 }
 
+int dump(string addr /* hex */, int bytes=80) {
+    long ret;
+    unsigned char *ptr = (unsigned char *) &ret;
+    string layout, ascii;
+
+    unsigned long long lladdr = strtoull(addr.c_str(), NULL, 16);
+    int head = 0x1;
+    while (bytes) {
+        ret = ptrace(PTRACE_PEEKTEXT, conf.child, lladdr, 0);
+        if (head) {
+            layout = "\t" + hexify(lladdr) + ":"; ascii = "";
+        }
+
+        char buf[1024];
+        sprintf(buf, " %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x",
+                ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+        layout += string(buf);
+
+        for (int i = 0; i < WORD; i++) {
+            if (ptr[i] > 127 || ptr[i] < 30) ptr[i] = '.';
+            ascii += ptr[i];
+        }
+
+        if (!head) {
+            writemsg(layout + " |" + ascii + "|");
+        }
+
+        lladdr += 8; bytes -= 8;
+        head ^= 0x1;
+    }
+    return 0;
+}
+
 void quit() { // exit
     exit(0);
 }
@@ -231,6 +289,27 @@ int get(string reg) {
     unsigned long long regval;
     regval = ptrace(PTRACE_PEEKUSER, conf.child, reg_offset[reg] * LLSIZE, 0);
     writemsg(reg + " = " + to_string(regval) + " (" + hexify(regval) + ")");
+    return 0;
+}
+
+int getregs() {
+    if (!checkstatus("getregs")) return ERR_WRONGSTATUS;
+
+    struct user_regs_struct regs;
+    if (ptrace(PTRACE_GETREGS, conf.child, 0, &regs) == 0) {
+        char buf[1024];
+        sprintf(buf, 
+            "RAX %llx\tRBX %llx\tRCX %llx\tRDX %llx\nR8  %llx\tR9  %llx\tR10 %llx\tR11 %llx\nR12 %llx\tR13 %llx\tR14 %llx\tR15 %llx\nRDI %llx\tRSI %llx\tRBP %llx\tRSP %llx\nRIP %llx\tFLAGS %016llx", 
+            regs.rax, regs.rbx, regs.rcx, regs.rdx, regs.r8, regs.r9, regs.r10, regs.r11, regs.r12, regs.r13, regs.r14, regs.r15, regs.rdi, regs.rsi, regs.rbp, regs.rsp, regs.rip, regs.eflags
+        );
+        writemsg(buf);
+        return 0;
+    }
+    return ERR_NULL;
+}
+
+int help() {
+    _help();
     return 0;
 }
 
@@ -258,12 +337,46 @@ int run() {
     }
 }
 
+int vmmap() {
+    if (!checkstatus("vmmap")) return ERR_WRONGSTATUS;
+
+    string maps = "/proc/" + to_string(conf.child) + "/maps", line;
+    ifstream file(maps.c_str());
+    while (getline(file, line)) {
+        stringstream ss(line);
+        string address, perms, offset, dev, node, pathname;
+        ss >> address >> perms >> offset >> dev >> node >> pathname;
+
+        // address preprocess
+        size_t idx = address.find("-");
+        string begin = address.substr(0, idx), end = address.substr(idx + 1, address.size() - 1 - idx);
+        padzero(begin, 16); padzero(end, 16);
+
+        // perms preprocess
+        perms = perms.substr(0, perms.size() - 1);
+
+        // offset preprocess
+        unsigned long long off = strtoull(offset.c_str(), NULL, 16);
+
+        char buf[1024];
+        sprintf(buf, "%s-%s %s %-8llx\t%s", begin.c_str(), end.c_str(), perms.c_str(), off, pathname.c_str());
+        writemsg(buf);
+    }
+}
+
 int set(string reg, string val) {
     if (!checkstatus("set")) return ERR_WRONGSTATUS;
 
     unsigned long long regval = toull(val);
     if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset[reg] * LLSIZE, regval) != 0) errquit("poketext");
     return 0;
+}
+
+int si() {
+    if (!checkstatus("si")) return ERR_WRONGSTATUS;
+
+    if (ptrace(PTRACE_SINGLESTEP, conf.child, 0, 0) < 0) errquit("ptrace singlestep");
+    return waitstatus();
 }
 
 int start() {
@@ -307,16 +420,16 @@ int middleware(vector<string> cmd) {
         if (cmd.size() < 2) return lackarg();
 
     } else if (cmd[0] == "dump" || cmd[0] == "x") {
-
+        return dump(cmd[1]);
     } else if (cmd[0] == "exit" || cmd[0] == "q") {
         quit();
     } else if (cmd[0] == "get" || cmd[0] == "g") {
         if (cmd.size() < 2) return lackarg();
         return get(cmd[1]);
     } else if (cmd[0] == "getregs") {
-        
+        return getregs();
     } else if (cmd[0] == "help" || cmd[0] == "h") {
-
+        return help();
     } else if (cmd[0] == "list" || cmd[0] == "l") {
 
     } else if (cmd[0] == "load") {
@@ -325,12 +438,12 @@ int middleware(vector<string> cmd) {
     } else if (cmd[0] == "run" || cmd[0] == "r") {
         return run();
     } else if (cmd[0] == "vmmap" || cmd[0] == "m") {
-
+        return vmmap();
     } else if (cmd[0] == "set" || cmd[0] == "s") {
         if (cmd.size() < 3) return lackarg();
         return set(cmd[1], cmd[2]);
     } else if (cmd[0] == "si") {
-
+        return si();
     } else if (cmd[0] == "start") {
         return start();
     } else {
