@@ -31,6 +31,7 @@
 #define ERR_BADWAIT -4
 #define ERR_NULL -5
 #define ERR_BADREG -6
+#define ERR_BADBREAKPOINT -7
 
 using namespace std;
 
@@ -158,14 +159,6 @@ string hexify(unsigned long long x) {
     return "0x" + ss.str();
 }
 
-unsigned long long toull(string val) {
-    if (val.size() > 2 && val[1] == 'x') {
-        return strtoull(val.c_str(), NULL, 16);
-    } else {
-        return strtoull(val.c_str(), NULL, 10);
-    }
-}
-
 void padzero(string &s, int n) {
     s.insert(s.begin(), 16 - s.length(), '0');
 }
@@ -229,16 +222,16 @@ string get_entrypoint() {
     return "0x" + string(hex + sig_i);
 }
 
-int restoreifbreak() {
+int restoreifbreak() { // TODO: if si (currently weird)? & how to recover code when there are two breakpoints in one word? & when to put 0xcc back? (always show 0xcc when diplaying memory layout?)
+// idea: find the adjacent breakpoints (higher addr), and re-POKETEXT again until there are no adjaceent (recursive?)
+// idea: put 0xcc back when next wait arrived (no matter what kind of wait, aka the general case of waitstatus())
     unsigned long long addr;
     addr = ptrace(PTRACE_PEEKUSER, conf.child, reg_offset["rip"] * LLSIZE, 0);
 
-    for (int i = 0; i < bps.size(); i++) {
-        cout << bps[i].addr << ' ' << addr - 1 << '\n';
-        if (bps[i].addr == addr - 1) {
-            if (ptrace(PTRACE_POKETEXT, conf.child, bps[i].addr, bps[i].code) != 0) errquit("ptrace poketext");
-            if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset["rip"] * LLSIZE, bps[i].addr) != 0) errquit("ptrace poketext");
-            bps.erase(bps.begin() + i);
+    for (int id = 0; id < bps.size(); id++) {
+        if (bps[id].addr == addr - 1) {
+            if (ptrace(PTRACE_POKETEXT, conf.child, bps[id].addr, bps[id].code) != 0) errquit("ptrace poketext");
+            if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset["rip"] * LLSIZE, bps[id].addr) != 0) errquit("ptrace poketext");
             break;
         }
     }
@@ -260,8 +253,8 @@ int waitstatus() { // stop & exit ? others?
     }
 }
 
-int setbreak(string addr) {
-    if (!checkstatus("break")) ERR_WRONGSTATUS;
+int setbreak(string addr) { // TODO: already exist & out of segment & breakpoint will not disappear even when program has terminated (reset every time when run()?)
+    if (!checkstatus("break")) return ERR_WRONGSTATUS;
 
     breakpoint bp;
     bp.addr = strtoull(addr.c_str(), NULL, 16);
@@ -281,6 +274,17 @@ int cont() {
 
     conf.status = RUNNING;
     return waitstatus();
+}
+
+int deletebreak(string breakpoint_id) {
+    if (!checkstatus("delete")) return ERR_WRONGSTATUS;
+
+    int id = stoi(breakpoint_id);
+    if (id > bps.size()) return ERR_BADBREAKPOINT;
+    if (ptrace(PTRACE_POKETEXT, conf.child, bps[id].addr, bps[id].code) != 0) errquit("ptrace poketext");
+    bps.erase(bps.begin() + id);
+    
+    return 0;
 }
 
 int dump(string addr /* hex */, int bytes=80) {
@@ -355,6 +359,15 @@ int help() {
     return 0;
 }
 
+int list() {
+    char buf[64];
+    for (int id = 0; id < bps.size(); id++) {
+        sprintf(buf, "%3d: %llx", id, bps[id].addr);
+        writemsg(buf);
+    }
+    return 0;
+}
+
 int load(string program) {
     if (!checkstatus("load")) return ERR_WRONGSTATUS;
 
@@ -410,7 +423,7 @@ int vmmap() {
 int set(string reg, string val) {
     if (!checkstatus("set")) return ERR_WRONGSTATUS;
 
-    unsigned long long regval = toull(val);
+    unsigned long long regval = strtoull(val.c_str(), NULL, 16);
     if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset[reg] * LLSIZE, regval) != 0) errquit("poketext");
     return 0;
 }
@@ -458,7 +471,7 @@ int middleware(vector<string> cmd) {
         return cont();
     } else if (cmd[0] == "delete") {
         if (cmd.size() < 2) return lackarg();
-
+        return deletebreak(cmd[1]);
     } else if (cmd[0] == "disasm" || cmd[0] == "d") {
         if (cmd.size() < 2) return lackarg();
 
@@ -474,7 +487,7 @@ int middleware(vector<string> cmd) {
     } else if (cmd[0] == "help" || cmd[0] == "h") {
         return help();
     } else if (cmd[0] == "list" || cmd[0] == "l") {
-
+        return list();
     } else if (cmd[0] == "load") {
         if (cmd.size() < 2) return lackarg();
         return load(cmd[1]);
