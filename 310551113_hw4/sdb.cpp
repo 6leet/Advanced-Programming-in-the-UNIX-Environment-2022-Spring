@@ -10,8 +10,8 @@
 #include <stdint.h>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/user.h>
 #include <sys/reg.h>
+#include <sys/user.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 
@@ -40,6 +40,14 @@ struct sdb_config {
     pid_t child;
     int status = NOT_LOADED;
 } conf;
+
+struct breakpoint {
+    unsigned long long addr;
+    long code;
+    bool inloop;
+};
+
+vector<breakpoint> bps;
 
 vector<string> status_str = {"NOT LOADED", "LOADED", "RUNNING"};
 
@@ -136,20 +144,6 @@ int undefined(string command) {
     return ERR_UNDEFINED;
 }
 
-int waitstatus() { // stop & exit ? others?
-    int wait_status;
-    if (waitpid(conf.child, &wait_status, 0) < 0) errquit("waitpid");
-    if (WIFEXITED(wait_status)) {
-        debug("child process " + to_string(conf.child) + " terminiated normally (code 0)");
-        conf.status = LOADED;
-        return 0;
-    } else if (WIFSTOPPED(wait_status)) {
-        return 0;
-    } else { // others
-        return ERR_BADWAIT;
-    }
-}
-
 bool checkstatus(string command) {
     if (conf.status ^ status_map[command]) {
         debug("state must be " + status_str[status_map[command]] + ", current status: " + status_str[conf.status]);
@@ -181,8 +175,9 @@ void padzero(string &s, int n) {
 // ---head of handler.hpp--
 
 string get_entrypoint();
+// restore breakpoint
 
-// break
+int setbreak(string);
 int cont();
 // delete
 // disasm
@@ -234,6 +229,51 @@ string get_entrypoint() {
     return "0x" + string(hex + sig_i);
 }
 
+int restoreifbreak() {
+    unsigned long long addr;
+    addr = ptrace(PTRACE_PEEKUSER, conf.child, reg_offset["rip"] * LLSIZE, 0);
+
+    for (int i = 0; i < bps.size(); i++) {
+        cout << bps[i].addr << ' ' << addr - 1 << '\n';
+        if (bps[i].addr == addr - 1) {
+            if (ptrace(PTRACE_POKETEXT, conf.child, bps[i].addr, bps[i].code) != 0) errquit("ptrace poketext");
+            if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset["rip"] * LLSIZE, bps[i].addr) != 0) errquit("ptrace poketext");
+            bps.erase(bps.begin() + i);
+            break;
+        }
+    }
+    return 0;
+}
+
+int waitstatus() { // stop & exit ? others?
+    int wait_status;
+    if (waitpid(conf.child, &wait_status, 0) < 0) errquit("waitpid");
+    if (WIFEXITED(wait_status)) {
+        debug("child process " + to_string(conf.child) + " terminiated normally (code 0)");
+        conf.status = LOADED;
+        return 0;
+    } else if (WIFSTOPPED(wait_status)) {
+        restoreifbreak();
+        return 0;
+    } else { // others
+        return ERR_BADWAIT;
+    }
+}
+
+int setbreak(string addr) {
+    if (!checkstatus("break")) ERR_WRONGSTATUS;
+
+    breakpoint bp;
+    bp.addr = strtoull(addr.c_str(), NULL, 16);
+    bp.code = ptrace(PTRACE_PEEKTEXT, conf.child, bp.addr, 0);
+    if (ptrace(PTRACE_POKETEXT, conf.child, bp.addr, (bp.code & 0xffffffffffffff00) | 0xcc) != 0) errquit("ptrace poketext");
+
+    bps.push_back(bp);
+
+    // if loop?
+    return 0;
+}
+
 int cont() {
     if (!checkstatus("cont")) return ERR_WRONGSTATUS;
 
@@ -244,6 +284,8 @@ int cont() {
 }
 
 int dump(string addr /* hex */, int bytes=80) {
+    if (!checkstatus("dump")) return ERR_WRONGSTATUS;
+
     long ret;
     unsigned char *ptr = (unsigned char *) &ret;
     string layout, ascii;
@@ -362,6 +404,7 @@ int vmmap() {
         sprintf(buf, "%s-%s %s %-8llx\t%s", begin.c_str(), end.c_str(), perms.c_str(), off, pathname.c_str());
         writemsg(buf);
     }
+    return 0;
 }
 
 int set(string reg, string val) {
@@ -410,7 +453,7 @@ int start() {
 int middleware(vector<string> cmd) {
     if (cmd[0] == "break" || cmd[0] == "b") {
         if (cmd.size() < 2) return lackarg();
-
+        return setbreak(cmd[1]);
     } else if (cmd[0] == "cont" || cmd[0] == "c") {
         return cont();
     } else if (cmd[0] == "delete") {
