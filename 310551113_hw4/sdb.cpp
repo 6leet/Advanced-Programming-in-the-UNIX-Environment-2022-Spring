@@ -6,7 +6,10 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <cmath>
 #include <cstring>
+#include <algorithm>
+#include <elf.h>
 #include <stdint.h>
 #include <signal.h>
 #include <unistd.h>
@@ -35,20 +38,25 @@
 
 using namespace std;
 
-struct sdb_config {
-    string script;
-    string program;
-    pid_t child;
-    int status = NOT_LOADED;
-} conf;
-
 struct breakpoint {
     unsigned long long addr;
     long code;
     bool inloop;
+    bool operator<(const breakpoint& rhs) {
+        return addr < rhs.addr;
+    }
 };
 
-vector<breakpoint> bps;
+struct sdb_config {
+    string script;
+    string program;
+    unsigned long long entrypoint;
+    unsigned long long textsize;
+    pid_t child;
+    int status = NOT_LOADED;
+    int lid = -1; // last restore breakpoint
+    vector<breakpoint> bps;
+} conf;
 
 vector<string> status_str = {"NOT LOADED", "LOADED", "RUNNING"};
 
@@ -163,6 +171,24 @@ void padzero(string &s, int n) {
     s.insert(s.begin(), 16 - s.length(), '0');
 }
 
+long alterpart(long code, int offset, long new_code) {
+    long filter = (0xffffffffffffffff << 8 * offset) | long(pow(16, (offset - 1) * 2) - 1);
+    long alter = (new_code << 8 * (offset - 1));
+    return (code & filter) | alter;
+}
+
+long alternate(long code, unsigned long long lladdr, bool to_0xcc, bool include_self) {
+    int s = (include_self) ? 0 : 1;
+    for (int id = 0; id < conf.bps.size(); id++) {
+        int dist = conf.bps[id].addr - lladdr;
+        if (dist >= s && dist < WORD) {
+            long new_code = (to_0xcc) ? 0xcc : conf.bps[id].code & 0xff;
+            code = alterpart(code, dist + 1, new_code);
+        }
+    }
+    return code;
+}
+
 // ---end of utils.cpp---
 
 // ---head of handler.hpp--
@@ -200,68 +226,123 @@ int setbreak(..., int &status) { // old status
 }
 */
 
-string get_entrypoint() {
-    ifstream file(conf.program, ifstream::binary);
-    if (!file) {
-        errquit("ifstream");
-    }
+void elfinfo() {
+    FILE *fp = fopen(conf.program.c_str(), "rb");
+    if (fp == NULL) errquit("fopen");
 
-    file.seekg(24);
-    char buf[32], hex[32];
-    file.read(buf, EPSIZE);
-    file.close();
+    Elf64_Ehdr ehdr;
+    if (fread(&ehdr, sizeof(ehdr), 1, fp) != 1) errquit("fread");
 
-    int sig_i = -1;
-    for (int i = 0; i < EPSIZE; i++) {
-        if (buf[EPSIZE - 1 - i] != 0 && sig_i < 0) {
-            sig_i = i * 2;
-        }
-        sprintf(hex + i * 2, "%02x\n", (uint8_t)buf[EPSIZE - 1 - i]);
-    }
-    hex[EPSIZE * 2] = '\0';
-    return "0x" + string(hex + sig_i);
-}
+    fseek(fp, ehdr.e_shoff, SEEK_SET);
 
-int restoreifbreak() { // TODO: if si (currently weird)? & how to recover code when there are two breakpoints in one word? & when to put 0xcc back? (always show 0xcc when diplaying memory layout?)
-// idea: find the adjacent breakpoints (higher addr), and re-POKETEXT again until there are no adjaceent (recursive?)
-// idea: put 0xcc back when next wait arrived (no matter what kind of wait, aka the general case of waitstatus())
-    unsigned long long addr;
-    addr = ptrace(PTRACE_PEEKUSER, conf.child, reg_offset["rip"] * LLSIZE, 0);
-
-    for (int id = 0; id < bps.size(); id++) {
-        if (bps[id].addr == addr - 1) {
-            if (ptrace(PTRACE_POKETEXT, conf.child, bps[id].addr, bps[id].code) != 0) errquit("ptrace poketext");
-            if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset["rip"] * LLSIZE, bps[id].addr) != 0) errquit("ptrace poketext");
+    for (int i = 0; i < ehdr.e_shnum; i++) {
+        Elf64_Shdr shdr;
+        if (fread(&shdr, sizeof(shdr), 1, fp) != 1) errquit("fread");
+        if (shdr.sh_addr == ehdr.e_entry) {
+            conf.entrypoint = shdr.sh_addr;
+            conf.textsize = shdr.sh_size;
             break;
         }
+    }
+
+    fclose(fp);
+
+    return;
+}
+
+int resetbreak() {
+    if (conf.lid < 0) return 0;
+
+    long lid = conf.lid;
+    long reset_code = conf.bps[lid].code;
+    unsigned long long lladdr = conf.bps[lid].addr;
+    reset_code = alternate(reset_code, lladdr, true, true);
+
+    if (ptrace(PTRACE_POKETEXT, conf.child, lladdr, reset_code) != 0) errquit("ptrace poketext");
+    
+    conf.lid = -1;
+    return 0;
+}
+
+int restoreifbreak(bool cont) {
+// idea: find the adjacent breakpoints (higher addr), and re-POKETEXT again until there are no adjaceent (recursive?)
+// idea: put 0xcc back when next wait arrived (no matter what kind of wait, aka the general case of waitstatus())
+    unsigned long long addr = ptrace(PTRACE_PEEKUSER, conf.child, reg_offset["rip"] * LLSIZE, 0);
+    int ccbyte = cont ? 1 : 0;
+
+    int rid = -1;
+    for (int id = 0; id < conf.bps.size(); id++) {
+        if (conf.bps[id].addr == addr - ccbyte) {
+            if (ptrace(PTRACE_POKEUSER, conf.child, reg_offset["rip"] * LLSIZE, conf.bps[id].addr) != 0) errquit("ptrace poketext");
+            rid = id;
+            break;
+        }
+    }
+    if (rid < 0) return 0;
+
+    long restore_code = conf.bps[rid].code;
+    unsigned long long lladdr = conf.bps[rid].addr;
+    restore_code = alternate(restore_code, lladdr, false, false);
+    if (ptrace(PTRACE_POKETEXT, conf.child, lladdr, restore_code) != 0) errquit("ptrace poketext");
+
+    conf.lid = rid;
+
+    return 0;
+}
+
+int setallbreak() {
+    vector<breakpoint> bps = conf.bps;
+    sort(bps.begin(), bps.end());
+
+    for (int id = 0; id < bps.size(); id++) {
+        if (ptrace(PTRACE_POKETEXT, conf.child, bps[id].addr, (bps[id].code & 0xffffffffffffff00) | 0xcc) != 0) errquit("ptrace poketext");
     }
     return 0;
 }
 
-int waitstatus() { // stop & exit ? others?
+int waitstatus(bool cont) { // stop & exit ? others?
     int wait_status;
     if (waitpid(conf.child, &wait_status, 0) < 0) errquit("waitpid");
+
     if (WIFEXITED(wait_status)) {
+        cout << "wait: exit\n";
         debug("child process " + to_string(conf.child) + " terminiated normally (code 0)");
         conf.status = LOADED;
         return 0;
     } else if (WIFSTOPPED(wait_status)) {
-        restoreifbreak();
+        cout << "wait: stopped\n";
+        resetbreak();
+        restoreifbreak(cont);
         return 0;
     } else { // others
+        cout << "wait: else\n";
         return ERR_BADWAIT;
     }
 }
 
-int setbreak(string addr) { // TODO: already exist & out of segment & breakpoint will not disappear even when program has terminated (reset every time when run()?)
+int setbreak(string addr) { // TODO: out of segment
     if (!checkstatus("break")) return ERR_WRONGSTATUS;
 
-    breakpoint bp;
-    bp.addr = strtoull(addr.c_str(), NULL, 16);
-    bp.code = ptrace(PTRACE_PEEKTEXT, conf.child, bp.addr, 0);
-    if (ptrace(PTRACE_POKETEXT, conf.child, bp.addr, (bp.code & 0xffffffffffffff00) | 0xcc) != 0) errquit("ptrace poketext");
+    unsigned long long lladdr = strtoull(addr.c_str(), NULL, 16);
+    if (lladdr < conf.entrypoint || lladdr > conf.entrypoint + conf.textsize) return ERR_BADBREAKPOINT;
 
-    bps.push_back(bp);
+    long code = ptrace(PTRACE_PEEKTEXT, conf.child, lladdr, 0);
+    bool exist = false;
+    for (int id = 0; id < conf.bps.size(); id++) {
+        if (conf.bps[id].addr == lladdr) {
+            debug("the breakpoint is already exists. (breakpoint " + to_string(id) + ")");
+            exist = true;
+        }
+    }
+    if (exist) return ERR_BADBREAKPOINT;
+    if (ptrace(PTRACE_POKETEXT, conf.child, lladdr, (code & 0xffffffffffffff00) | 0xcc) != 0) errquit("ptrace poketext");
+    code = alternate(code, lladdr, false, true);
+
+    breakpoint bp;
+    bp.addr = lladdr;
+    bp.code = code;
+
+    conf.bps.push_back(bp);
 
     // if loop?
     return 0;
@@ -273,16 +354,21 @@ int cont() {
     ptrace(PTRACE_CONT, conf.child, 0, 0);
 
     conf.status = RUNNING;
-    return waitstatus();
+    return waitstatus(true);
 }
 
 int deletebreak(string breakpoint_id) {
     if (!checkstatus("delete")) return ERR_WRONGSTATUS;
 
-    int id = stoi(breakpoint_id);
-    if (id > bps.size()) return ERR_BADBREAKPOINT;
-    if (ptrace(PTRACE_POKETEXT, conf.child, bps[id].addr, bps[id].code) != 0) errquit("ptrace poketext");
-    bps.erase(bps.begin() + id);
+    int did = stoi(breakpoint_id);
+    if (did > conf.bps.size()) return ERR_BADBREAKPOINT;
+
+    long delete_code = conf.bps[did].code;
+    unsigned long long lladdr = conf.bps[did].addr;
+    delete_code = alternate(delete_code, lladdr, true, false);
+
+    if (ptrace(PTRACE_POKETEXT, conf.child, lladdr, delete_code) != 0) errquit("ptrace poketext");
+    conf.bps.erase(conf.bps.begin() + did);
     
     return 0;
 }
@@ -298,6 +384,7 @@ int dump(string addr /* hex */, int bytes=80) {
     int head = 0x1;
     while (bytes) {
         ret = ptrace(PTRACE_PEEKTEXT, conf.child, lladdr, 0);
+        ret = alternate(ret, lladdr, true, true);
         if (head) {
             layout = "\t" + hexify(lladdr) + ":"; ascii = "";
         }
@@ -361,8 +448,8 @@ int help() {
 
 int list() {
     char buf[64];
-    for (int id = 0; id < bps.size(); id++) {
-        sprintf(buf, "%3d: %llx", id, bps[id].addr);
+    for (int id = 0; id < conf.bps.size(); id++) {
+        sprintf(buf, "%3d: %llx, 0x%016lx", id, conf.bps[id].addr, conf.bps[id].code);
         writemsg(buf);
     }
     return 0;
@@ -372,8 +459,8 @@ int load(string program) {
     if (!checkstatus("load")) return ERR_WRONGSTATUS;
 
     conf.program = program;
-    string entrypoint = get_entrypoint();
-    debug("program '" + conf.program + "' loaded. entry point " + entrypoint);
+    elfinfo();
+    debug("program '" + conf.program + "' loaded. entry point " + hexify(conf.entrypoint));
 
     conf.status = LOADED;
     return 0;
@@ -432,7 +519,7 @@ int si() {
     if (!checkstatus("si")) return ERR_WRONGSTATUS;
 
     if (ptrace(PTRACE_SINGLESTEP, conf.child, 0, 0) < 0) errquit("ptrace singlestep");
-    return waitstatus();
+    return waitstatus(false);
 }
 
 int start() {
@@ -449,9 +536,11 @@ int start() {
     } else {
         conf.child = pid;
 
-        int ret = waitstatus();
+        int ret = waitstatus(false);
         ptrace(PTRACE_SETOPTIONS, conf.child, 0, PTRACE_O_EXITKILL);
         debug("pid " + to_string(conf.child));
+
+        setallbreak();
 
         conf.status = RUNNING;
         return ret;
@@ -464,6 +553,7 @@ int start() {
 // ---head of core.cpp---
 
 int middleware(vector<string> cmd) {
+    if (cmd.size() < 1) return 0; 
     if (cmd[0] == "break" || cmd[0] == "b") {
         if (cmd.size() < 2) return lackarg();
         return setbreak(cmd[1]);
