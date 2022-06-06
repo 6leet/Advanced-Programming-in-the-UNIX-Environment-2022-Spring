@@ -17,6 +17,7 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
+#include <capstone/capstone.h>
 
 // ---head of utils.cpp---
 
@@ -35,6 +36,7 @@
 #define ERR_NULL -5
 #define ERR_BADREG -6
 #define ERR_BADBREAKPOINT -7
+#define ERR_NOFILE -8
 
 using namespace std;
 
@@ -148,6 +150,11 @@ int lackarg() {
     return ERR_LACKARG;
 }
 
+int notgiven(string arg) {
+    debug("no " + arg + " is given");
+    return ERR_LACKARG;
+}
+
 int undefined(string command) {
     debug("Undefined command: \"" + command + "\".  Try \"help\".");
     return ERR_UNDEFINED;
@@ -198,14 +205,14 @@ string get_entrypoint();
 
 int setbreak(string);
 int cont();
-// delete
-// disasm
+int deletebreak(string);
+int disasm(string, int);
 int dump(string, int);
 void quit(); // exit
 int get(string);
 int getregs();
 int help();
-// list
+int list();
 int load(string);
 int run();
 int vmmap();
@@ -216,7 +223,7 @@ int start();
 // ---head of handler.cpp---
 
 /*
-return if WIFSTOPPED ?
+template
 int setbreak(..., int &status) { // old status
     if (status) { // check status
 
@@ -226,9 +233,12 @@ int setbreak(..., int &status) { // old status
 }
 */
 
-void elfinfo() {
+int elfinfo() {
     FILE *fp = fopen(conf.program.c_str(), "rb");
-    if (fp == NULL) errquit("fopen");
+    if (fp == NULL) {
+        debug(conf.program + ": No such file or directory.");
+        return ERR_NOFILE;
+    }
 
     Elf64_Ehdr ehdr;
     if (fread(&ehdr, sizeof(ehdr), 1, fp) != 1) errquit("fread");
@@ -247,7 +257,7 @@ void elfinfo() {
 
     fclose(fp);
 
-    return;
+    return 0;
 }
 
 int resetbreak() {
@@ -279,6 +289,10 @@ int restoreifbreak(bool cont) {
         }
     }
     if (rid < 0) return 0;
+
+    char buf[64];
+    sprintf(buf, "breakpoint @ %10llx: ...", addr);
+    debug(buf);
 
     long restore_code = conf.bps[rid].code;
     unsigned long long lladdr = conf.bps[rid].addr;
@@ -320,11 +334,14 @@ int waitstatus(bool cont) { // stop & exit ? others?
     }
 }
 
-int setbreak(string addr) { // TODO: out of segment
+int setbreak(string addr) {
     if (!checkstatus("break")) return ERR_WRONGSTATUS;
 
     unsigned long long lladdr = strtoull(addr.c_str(), NULL, 16);
-    if (lladdr < conf.entrypoint || lladdr > conf.entrypoint + conf.textsize) return ERR_BADBREAKPOINT;
+    if (lladdr < conf.entrypoint || lladdr > conf.entrypoint + conf.textsize - 1) {
+        debug("the address is out of the range of the text segment");
+        return ERR_BADBREAKPOINT;
+    }
 
     long code = ptrace(PTRACE_PEEKTEXT, conf.child, lladdr, 0);
     bool exist = false;
@@ -361,7 +378,10 @@ int deletebreak(string breakpoint_id) {
     if (!checkstatus("delete")) return ERR_WRONGSTATUS;
 
     int did = stoi(breakpoint_id);
-    if (did > conf.bps.size()) return ERR_BADBREAKPOINT;
+    if (did > conf.bps.size()) {
+        debug("breakpoint " + breakpoint_id + " does not exist");
+        return ERR_BADBREAKPOINT;
+    }
 
     long delete_code = conf.bps[did].code;
     unsigned long long lladdr = conf.bps[did].addr;
@@ -369,7 +389,47 @@ int deletebreak(string breakpoint_id) {
 
     if (ptrace(PTRACE_POKETEXT, conf.child, lladdr, delete_code) != 0) errquit("ptrace poketext");
     conf.bps.erase(conf.bps.begin() + did);
+
+    debug("breakpoint " + breakpoint_id + " deleted");
     
+    return 0;
+}
+
+int disasm(string addr, int bytes=80) {
+    if (!checkstatus("disasm")) return ERR_WRONGSTATUS;
+
+    long ret;
+    unsigned char code[bytes];
+
+    unsigned long long lladdr = strtoull(addr.c_str(), NULL, 16);
+    for (int i = 0; i < bytes / WORD; i++) {
+        ret = ptrace(PTRACE_PEEKTEXT, conf.child, lladdr + i * WORD, 0);
+        ret = alternate(ret, lladdr + i * WORD, true, true);
+        memcpy(&code[i * WORD], &ret, WORD);
+    }
+
+    csh handle;
+	cs_insn *insn;
+	if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) errquit("cs_open");
+	int count = cs_disasm(handle, (uint8_t*)code, bytes, lladdr, 0, &insn);
+	if (count > 0) {
+		for (int i = 0; i < min(count, 10); i++) {
+            if (insn[i].address < conf.entrypoint || insn[i].address > conf.entrypoint + conf.textsize - 1) {
+                debug("the address is out of the range of the text segment");
+                break;
+            }
+            printf("0x%lx: ", insn[i].address);
+            int insn_bytes = (i < count - 1) ? insn[i + 1].address - insn[i].address : sizeof(insn[i].bytes), b;
+            for (b = 0; b < insn_bytes; b++) printf("%2.2x ", insn[i].bytes[b]);
+            for (; b < 10; b++) printf("   ");
+            printf("%s\t%s\n", insn[i].mnemonic, insn[i].op_str);
+		}
+		cs_free(insn, count);
+	} else
+		printf("ERROR: Failed to disassemble given code!\n");
+
+	cs_close(&handle);
+
     return 0;
 }
 
@@ -395,7 +455,7 @@ int dump(string addr /* hex */, int bytes=80) {
         layout += string(buf);
 
         for (int i = 0; i < WORD; i++) {
-            if (ptr[i] > 127 || ptr[i] < 30) ptr[i] = '.';
+            if (!isprint(ptr[i])) ptr[i] = '.';
             ascii += ptr[i];
         }
 
@@ -459,7 +519,10 @@ int load(string program) {
     if (!checkstatus("load")) return ERR_WRONGSTATUS;
 
     conf.program = program;
-    elfinfo();
+    if (elfinfo() == ERR_NOFILE) {
+        conf.program = "";
+        return ERR_NOFILE;
+    }
     debug("program '" + conf.program + "' loaded. entry point " + hexify(conf.entrypoint));
 
     conf.status = LOADED;
@@ -555,22 +618,23 @@ int start() {
 int middleware(vector<string> cmd) {
     if (cmd.size() < 1) return 0; 
     if (cmd[0] == "break" || cmd[0] == "b") {
-        if (cmd.size() < 2) return lackarg();
+        if (cmd.size() < 2) return notgiven("address");
         return setbreak(cmd[1]);
     } else if (cmd[0] == "cont" || cmd[0] == "c") {
         return cont();
     } else if (cmd[0] == "delete") {
-        if (cmd.size() < 2) return lackarg();
+        if (cmd.size() < 2) return notgiven("break-point-id");
         return deletebreak(cmd[1]);
     } else if (cmd[0] == "disasm" || cmd[0] == "d") {
-        if (cmd.size() < 2) return lackarg();
-
+        if (cmd.size() < 2) return notgiven("address");
+        return disasm(cmd[1]);
     } else if (cmd[0] == "dump" || cmd[0] == "x") {
+        if (cmd.size() < 2) return notgiven("address");
         return dump(cmd[1]);
     } else if (cmd[0] == "exit" || cmd[0] == "q") {
         quit();
     } else if (cmd[0] == "get" || cmd[0] == "g") {
-        if (cmd.size() < 2) return lackarg();
+        if (cmd.size() < 2) return notgiven("register");
         return get(cmd[1]);
     } else if (cmd[0] == "getregs") {
         return getregs();
@@ -579,7 +643,7 @@ int middleware(vector<string> cmd) {
     } else if (cmd[0] == "list" || cmd[0] == "l") {
         return list();
     } else if (cmd[0] == "load") {
-        if (cmd.size() < 2) return lackarg();
+        if (cmd.size() < 2) return notgiven("program path");
         return load(cmd[1]);
     } else if (cmd[0] == "run" || cmd[0] == "r") {
         return run();
